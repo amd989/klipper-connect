@@ -41,6 +41,9 @@ load_filament: LOAD_FILAMENT
 unload_filament: UNLOAD_FILAMENT
 # Parameter the macros take for the nozzle temperature (empty = none)
 filament_temp_param: TEMP
+# Connect's "Start MBL" sends a plain G28 (Prusa firmware levels the bed
+# after it). That G28 is followed by this G-code. Empty = plain G28 only.
+mbl_gcode: G80
 
 [camera]
 # Uncomment snapshot_url to send webcam snapshots to Connect.
@@ -53,5 +56,7 @@ trigger: 30
 #token_file: ~/printer_data/klipper_connect/camera.json
 
 [bridge]
+# Send details/thumbnails of the N newest files up front (0 = on demand only)
+file_info_count: 20
 telemetry_interval: 1.0
 log_level: INFO

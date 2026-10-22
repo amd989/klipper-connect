@@ -122,3 +122,12 @@ def test_extras_in_telemetry():
     no_spool = build_telemetry({"print_stats": {}}, State.PRINTING, "fan",
                                "x", {"filament_type": "PLA"}, {})
     assert no_spool["material"] == "PLA"
+
+
+def test_expected_restart_is_busy_then_error():
+    clock = Clock()
+    t = StateTracker(clock)
+    t.expect_restart(30)
+    assert t.update("disconnected", "standby", "Idle", False) == State.BUSY
+    clock.now += 31
+    assert t.update("disconnected", "standby", "Idle", False) == State.ERROR

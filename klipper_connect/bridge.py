@@ -17,12 +17,14 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from prusa.connect.printer import Printer
 from prusa.connect.printer.command import Command, CommandFailed
 from prusa.connect.printer.const import Command as CommandType
-from prusa.connect.printer.const import Event, Source, State
+from prusa.connect.printer.const import (GCODE_EXTENSIONS, Event, Source,
+                                         State)
 from prusa.connect.printer.util import make_fingerprint
 
 from . import __version__
@@ -172,6 +174,7 @@ class Bridge:
         self.extras: Dict[str, Any] = {}
         self._extras_at: Optional[float] = None
         self._mesh_key: Optional[str] = None
+        self._file_info_sent: set = set()
 
         self._register_handlers()
 
@@ -398,6 +401,55 @@ class Bridge:
         with self.lock:
             self.extras = extras
 
+    def send_file_info(self, connect_path: str) -> bool:
+        """Push a file's details (metadata + thumbnail) to Connect."""
+        try:
+            caller = SimpleNamespace(kwargs={"path": connect_path})
+            info = self.printer.get_file_info(caller)
+        except Exception as err:  # pylint: disable=broad-except
+            log.debug("No file info for %s: %s", connect_path, err)
+            return False
+        self.printer.event_cb(**info)
+        return True
+
+    def recent_files(self) -> list:
+        """Newest printable files as (mtime, connect path), newest first."""
+        found = []
+        root = self.cfg.gcodes_path
+        for dirpath, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for name in files:
+                if name.startswith(".") or \
+                        not name.lower().endswith(GCODE_EXTENSIONS):
+                    continue
+                full = os.path.join(dirpath, name)
+                try:
+                    mtime = os.stat(full).st_mtime
+                except OSError:
+                    continue
+                rel = os.path.relpath(full, root).replace(os.sep, "/")
+                found.append((mtime, self.to_connect(rel)))
+        found.sort(reverse=True)
+        return found[:self.cfg.file_info_count]
+
+    def push_file_info(self):
+        """Send details of recent files Connect hasn't been sent yet."""
+        if self.cfg.file_info_count <= 0:
+            return
+        sent = 0
+        for mtime, path in self.recent_files():
+            key = f"{path}@{mtime}"
+            if key in self._file_info_sent:
+                continue
+            # The SDK's file tree is updated by inotify; wait until it is
+            if self.printer.fs.get(path) is None:
+                continue
+            if self.send_file_info(path):
+                sent += 1
+            self._file_info_sent.add(key)
+        if sent:
+            log.info("Sent details of %d file(s) to Connect", sent)
+
     def telemetry(self) -> Dict[str, Any]:
         with self.lock:
             status = self.status
@@ -505,8 +557,23 @@ class Bridge:
             State.IDLE, State.READY, State.BUSY, State.FINISHED,
             State.STOPPED, State.PAUSED, State.PRINTING
         }, "run G-code")
+        if self.printer.state not in (State.PRINTING, State.PAUSED):
+            script = self.translate_gcode(script)
         self.mr.gcode(script)
         return {"source": Source.CONNECT}
+
+    def translate_gcode(self, script: str) -> str:
+        """Adapt Prusa-firmware G-code from Connect to this Klipper setup."""
+        lines = []
+        for line in script.splitlines():
+            line = line.strip()
+            lines.append(line)
+            if line.upper() == "G28" and self.cfg.mbl_gcode:
+                lines.append(self.cfg.mbl_gcode)
+        result = "\n".join(lines)
+        if result != script:
+            log.info("G-code from Connect run as: %r", result)
+        return result
 
     def cmd_job_info(self, caller: Command) -> Dict[str, Any]:
         data = self.job_info()
@@ -537,6 +604,7 @@ class Bridge:
             State.IDLE, State.READY, State.FINISHED, State.STOPPED,
             State.ERROR, State.BUSY
         }, "reset the printer")
+        self.tracker.expect_restart()
         self.mr.firmware_restart()
         return {"source": Source.CONNECT}
 
@@ -577,6 +645,15 @@ class Bridge:
             self.stop_event.wait(max(0.0,
                                      interval - (time.monotonic() - started)))
 
+    def _file_info_loop(self):
+        while not self.stop_event.is_set():
+            if self.printer.token:
+                try:
+                    self.push_file_info()
+                except Exception:  # pylint: disable=broad-except
+                    log.exception("File info error")
+            self.stop_event.wait(10)
+
     def _inotify_loop(self):
         while not self.stop_event.is_set():
             try:
@@ -591,6 +668,7 @@ class Bridge:
             "download-loop": self.printer.download_mgr.loop,
             "inotify-loop": self._inotify_loop,
             "telemetry-loop": self._telemetry_loop,
+            "file-info-loop": self._file_info_loop,
         }
         if self.webcam:
             targets["camera-loop"] = self.printer.camera_controller.\

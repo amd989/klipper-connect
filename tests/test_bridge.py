@@ -201,9 +201,9 @@ def test_start_print_rejects_bad_paths(bridge):
 
 def test_gcode_and_filament(bridge, moonraker):
     bridge.poll()
-    run_command(bridge.printer, "GCODE", {"gcode": "G28\nM104 S200\n"})
+    run_command(bridge.printer, "GCODE", {"gcode": "G28 X\nM104 S200\n"})
     assert moonraker.posts("/printer/gcode/script")[-1][2] == {
-        "script": "G28\nM104 S200"}
+        "script": "G28 X\nM104 S200"}
     run_command(bridge.printer, "LOAD_FILAMENT", {
         "nozzle_temperature": 230, "bed_temperature": 85})
     assert moonraker.posts("/printer/gcode/script")[-1][2] == {
@@ -505,3 +505,71 @@ def test_commands_are_logged(bridge, moonraker, caplog):
     bridge.stop_event.set()
     worker.join(2)
     assert "Connect command 5 GCODE: {'gcode': 'G28'}" in caplog.text
+
+
+def test_plain_g28_from_connect_also_levels(bridge, moonraker):
+    bridge.poll()
+    # What Connect's "Start MBL" sends
+    run_command(bridge.printer, "GCODE", {"gcode": "G28\r\n"})
+    assert moonraker.posts("/printer/gcode/script")[-1][2] == {
+        "script": "G28\nG80"}
+    # G28 W (home without MBL) and axis homing are left alone
+    for gcode in ("G28 W", "G28 X Y", "g28 z"):
+        run_command(bridge.printer, "GCODE", {"gcode": gcode})
+        assert moonraker.posts("/printer/gcode/script")[-1][2] == {
+            "script": gcode}
+    # Never during a print
+    moonraker.set_print("printing", "cube.gcode")
+    bridge.poll()
+    run_command(bridge.printer, "GCODE", {"gcode": "G28"})
+    assert moonraker.posts("/printer/gcode/script")[-1][2] == {
+        "script": "G28"}
+    # Can be turned off
+    bridge.cfg.mbl_gcode = ""
+    assert bridge.translate_gcode("G28") == "G28"
+
+
+def test_reset_shows_busy_while_klipper_restarts(bridge, moonraker):
+    bridge.poll()
+    evts = run_command(bridge.printer, "RESET_PRINTER")
+    assert evts[-1].event == Event.FINISHED
+    assert moonraker.posts("/printer/firmware_restart")
+    for klippy in ("disconnected", "shutdown", "startup"):
+        moonraker.klippy_state = klippy
+        assert bridge.poll() == State.BUSY, klippy
+    moonraker.klippy_state = "ready"
+    assert bridge.poll() == State.IDLE
+    # Without a reset, a shutdown is an error again
+    moonraker.klippy_state = "shutdown"
+    assert bridge.poll() == State.ERROR
+
+
+def test_file_info_pushed_for_recent_files(bridge, moonraker, tmp_path):
+    import os
+    gcodes = tmp_path / "gcodes"
+    thumb = "; thumbnail begin 4x4 8\n; aGVsbG8h\n; thumbnail end\n"
+    for i, name in enumerate(["old.gcode", "mid.gcode", "new.gcode"]):
+        f = gcodes / name
+        f.write_text(thumb + "G28\n")
+        os.utime(f, (1000 + i, 1000 + i))
+    (gcodes / "notes.txt").write_text("x")
+    os.utime(gcodes / "cube.gcode", (1, 1))  # fixture file: oldest
+    # Rebuild the SDK's file tree (inotify does this on the Pi)
+    bridge.printer.fs.detach("local")
+    bridge.printer.attach(str(gcodes), "local")
+    drain(bridge.printer)
+
+    bridge.cfg.file_info_count = 2
+    bridge.push_file_info()
+    infos = events(drain(bridge.printer), Event.FILE_INFO)
+    assert [e.data["path"] for e in infos] == ["/local/new.gcode",
+                                               "/local/mid.gcode"]
+    assert infos[0].data["preview"] == "aGVsbG8h"
+
+    bridge.push_file_info()  # already sent -> nothing new
+    assert not events(drain(bridge.printer), Event.FILE_INFO)
+
+    os.utime(gcodes / "old.gcode", (2000, 2000))  # file replaced
+    bridge.push_file_info()
+    infos = events(drain(bridge.printer), Event.FILE_INFO)
+    assert [e.data["path"] for e in infos] == ["/local/old.gcode"]

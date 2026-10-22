@@ -12,6 +12,9 @@ from prusa.connect.printer.const import State
 # Same value PrusaLink uses; it gives Connect time to grab a final snapshot.
 PRINT_END_HOLD = 11.0
 
+# How long a Klipper restart we asked for may take before it counts as ERROR
+RESTART_GRACE = 60.0
+
 ACTIVE_PRINT_STATES = {"printing", "paused"}
 END_PRINT_STATES = {
     "complete": State.FINISHED,
@@ -32,6 +35,11 @@ class StateTracker:
         self.clock = clock
         self.last_print_state: Optional[str] = None
         self.ended_at: Optional[float] = None
+        self.restart_until: Optional[float] = None
+
+    def expect_restart(self, seconds: float = RESTART_GRACE):
+        """Klipper is about to restart: report BUSY, not ERROR, meanwhile."""
+        self.restart_until = self.clock() + seconds
 
     def update(self, klippy_state: str, print_state: str, idle_state: str,
                ready: bool) -> State:
@@ -43,6 +51,11 @@ class StateTracker:
         elif print_state in ACTIVE_PRINT_STATES:
             self.ended_at = None
 
+        if klippy_state == "ready":
+            self.restart_until = None
+        elif (self.restart_until is not None
+              and self.clock() < self.restart_until):
+            return State.BUSY
         if klippy_state == "startup":
             return State.BUSY
         if klippy_state != "ready":

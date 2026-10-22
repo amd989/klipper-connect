@@ -59,6 +59,10 @@ class Config:
     unload_filament: str = "UNLOAD_FILAMENT"
     # Parameter name for the nozzle temperature, empty to never pass one
     filament_temp_param: str = "TEMP"
+    # Prusa firmware runs mesh bed leveling after a plain G28 (G28 W skips
+    # it), and Connect's "Start MBL" sends just G28. A plain G28 line from
+    # Connect is followed by this G-code. Empty = send G28 as is.
+    mbl_gcode: str = "G80"
 
     # [camera] - only active when snapshot_url is set
     camera_url: str = ""
@@ -68,6 +72,9 @@ class Config:
     camera_file: str = "~/printer_data/klipper_connect/camera.json"
 
     # [bridge]
+    # Send details (incl. thumbnail) of this many most recent files to
+    # Connect up front, so the file list has thumbnails. 0 = only on demand.
+    file_info_count: int = 20
     telemetry_interval: float = 1.0
     log_level: str = "INFO"
 
@@ -137,6 +144,7 @@ def load(path: str) -> Config:
     cfg.unload_filament = get("macros", "unload_filament", cfg.unload_filament)
     cfg.filament_temp_param = get("macros", "filament_temp_param",
                                   cfg.filament_temp_param)
+    cfg.mbl_gcode = get("macros", "mbl_gcode", cfg.mbl_gcode)
 
     cfg.camera_url = get("camera", "snapshot_url", "")
     cfg.camera_name = get("camera", "name", cfg.camera_name)
@@ -146,6 +154,8 @@ def load(path: str) -> Config:
                          f"{', '.join(CAMERA_TRIGGERS)}")
     cfg.camera_file = _path(get("camera", "token_file", cfg.camera_file))
 
+    if ini.has_option("bridge", "file_info_count"):
+        cfg.file_info_count = ini.getint("bridge", "file_info_count")
     if ini.has_option("bridge", "telemetry_interval"):
         cfg.telemetry_interval = ini.getfloat("bridge", "telemetry_interval")
     cfg.log_level = get("bridge", "log_level", cfg.log_level).upper()

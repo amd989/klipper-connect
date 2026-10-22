@@ -97,6 +97,13 @@ managed_services: klipper-connect
 - **Prusa-specific G-code:** files sliced with Prusa's MK3S profile contain
   `M862.x` checks and similar commands. Your Klipper config needs macros for
   these, as it does today when you print from Mainsail.
+- **Start MBL:** Connect sends a plain `G28`, because Prusa firmware levels
+  the bed after homing. The bridge runs `G28` followed by `G80` for such a
+  command (`mbl_gcode` in `[macros]`; `G28 W` and per-axis homing are left
+  alone, and nothing is changed during a print).
+- **Thumbnails:** details of the 20 newest files (and any new ones) are
+  sent to Connect up front, so the file list can show thumbnails
+  (`file_info_count` in `[bridge]`).
 - **State mapping:** Klipper keeps "complete" or "cancelled" until the next
   print. KlipperConnect shows FINISHED/STOPPED for 11 seconds (as PrusaLink
   does), then IDLE.
