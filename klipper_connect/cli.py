@@ -42,7 +42,6 @@ def cmd_register(cfg: config_mod.Config) -> int:
         config_mod.save_credentials(cfg, token)
         done.set()
 
-    printer.software = cfg.link_version
     printer.register_handler = on_token
     code = printer.register()
     url = f"{cfg.connect_server}/add-printer/connect/{printer.type}/{code}"

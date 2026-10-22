@@ -53,9 +53,28 @@ def firmware_version(klipper_version: Optional[str]) -> Optional[str]:
     return f"{match.group(1)}-{match.group(2) or 0}"
 
 
-def make_printer(cfg: Config) -> Printer:
-    return Printer(cfg.printer_type, cfg.serial_number,
-                   make_fingerprint(cfg.serial_number))
+class KlipperPrinter(Printer):
+    """SDK printer that adds the fields PrusaLink puts in its INFO report.
+
+    Connect reads the PrusaLink version from `prusalink`; without it the
+    printer page says the version is deprecated.
+    """
+
+    nozzle_diameter: Optional[float] = None
+
+    def get_info(self) -> Dict[str, Any]:
+        info = super().get_info()
+        info["prusalink"] = self.software
+        info["prusa_link"] = self.software
+        info["nozzle_diameter"] = self.nozzle_diameter
+        return info
+
+
+def make_printer(cfg: Config) -> KlipperPrinter:
+    printer = KlipperPrinter(cfg.printer_type, cfg.serial_number,
+                             make_fingerprint(cfg.serial_number))
+    printer.software = cfg.link_version
+    return printer
 
 
 def network_info() -> Dict[str, Optional[str]]:
@@ -139,6 +158,7 @@ class Bridge:
         self.metadata: Dict[str, Dict[str, Any]] = {}
         self._moonraker_down = False
         self.webcam: Optional[WebcamBridge] = None
+        self.info_sent = False
 
         self._register_handlers()
 
@@ -200,8 +220,6 @@ class Bridge:
         p = self.printer
         p.connection_from_config(self.cfg.credentials_file)
         p.software = self.cfg.link_version
-        p.firmware = (self.cfg.firmware_version
-                      or firmware_version(self._klipper_version()))
         p.network_info.update(network_info())
         os.makedirs(self.cfg.gcodes_path, exist_ok=True)
         p.attach(self.cfg.gcodes_path, self.cfg.storage_name)
@@ -214,12 +232,28 @@ class Bridge:
             except Exception:  # pylint: disable=broad-except
                 log.exception("Camera setup failed; running without it")
 
-    def _klipper_version(self) -> Optional[str]:
+    def send_info(self) -> bool:
+        """Send the full printer info (firmware, versions, nozzle, files).
+
+        PrusaLink sends this on startup; Connect otherwise keeps showing the
+        values from registration. Needs Klipper to be ready, so it's called
+        from the poll loop until it succeeds.
+        """
+        p = self.printer
         try:
-            return self.mr.printer_info().get("software_version")
+            version = self.mr.printer_info().get("software_version")
+            extruder = self.mr.query(["configfile"]).get(
+                "configfile", {}).get("settings", {}).get("extruder", {})
         except MoonrakerError as err:
-            log.warning("Could not read Klipper version: %s", err)
-            return None
+            log.debug("Printer info not available yet: %s", err)
+            return False
+        p.firmware = self.cfg.firmware_version or firmware_version(version)
+        nozzle = extruder.get("nozzle_diameter")
+        p.nozzle_diameter = float(nozzle) if nozzle is not None else None
+        p.event_cb(**p.get_info())
+        log.info("Sent printer info: firmware %s, PrusaLink %s, nozzle %s",
+                 p.firmware, p.software, p.nozzle_diameter)
+        return True
 
     # --- polling / state ----------------------------------------------------
 
@@ -238,6 +272,12 @@ class Bridge:
                 log.warning("%s", err)
             self._moonraker_down = True
             klippy_state, status = "disconnected", {}
+
+        if klippy_state == "ready" and not self.info_sent:
+            self.info_sent = self.send_info()
+        elif klippy_state != "ready":
+            # Klipper restarted (maybe updated): send fresh info when back
+            self.info_sent = False
 
         print_stats = status.get("print_stats", {})
         print_state = print_stats.get("state", "standby")
@@ -500,8 +540,7 @@ class Bridge:
     def run(self):
         self.setup()
         self.start_threads()
-        log.info("klipper-connect %s, reporting firmware %s",
-                 __version__, self.printer.firmware)
+        log.info("klipper-connect %s", __version__)
         log.info("Bridge running: %s (%s) -> %s", self.cfg.serial_number,
                  self.cfg.printer_type.name, self.cfg.connect_server)
         try:

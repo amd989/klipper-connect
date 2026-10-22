@@ -70,6 +70,8 @@ class FakeMoonraker:
             "idle_timeout": {"state": "Idle"},
             "fan": {"speed": 0.5, "rpm": 3000.0},
             "heater_fan nozzle_cooling_fan": {"speed": 1.0, "rpm": 6900.0},
+            "configfile": {"settings": {"extruder": {
+                "nozzle_diameter": 0.4}}},
         }
         self.metadata = {}
         self.calls = []  # (method, path, body)

@@ -64,12 +64,53 @@ def run_command(printer, name, kwargs=None, command_id=1):
     return events(drain(printer))
 
 
-def test_setup_reports_firmware_and_files(bridge):
-    assert bridge.printer.firmware == "0.12.0-0"
-    assert bridge.printer.software == "0.8.1"
+def test_setup_reports_files(bridge):
     assert bridge.printer.token == "test-token"
     inserted = events(drain(bridge.printer), Event.MEDIUM_INSERTED)
     assert inserted and inserted[0].data["root"] == "/local"
+
+
+def test_info_sent_once_klipper_is_ready(bridge, moonraker):
+    drain(bridge.printer)
+    moonraker.klippy_state = "startup"
+    bridge.poll()
+    assert not events(drain(bridge.printer), Event.INFO)
+
+    moonraker.klippy_state = "ready"
+    bridge.poll()
+    info = events(drain(bridge.printer), Event.INFO)
+    assert len(info) == 1
+    data = info[0].data
+    assert data["firmware"] == "0.12.0-0"
+    assert data["prusalink"] == "0.8.1"
+    assert data["sdk"] == "0.8.1"
+    assert data["nozzle_diameter"] == 0.4
+    assert data["sn"] == SN
+    assert data["type"] == 1 and data["version"] == 3
+
+    bridge.poll()
+    assert not events(drain(bridge.printer), Event.INFO)
+
+    # Klipper restart (e.g. after an update) -> info is sent again
+    moonraker.klippy_state = "shutdown"
+    bridge.poll()
+    moonraker.klippy_state = "ready"
+    bridge.poll()
+    assert len(events(drain(bridge.printer), Event.INFO)) == 1
+
+
+def test_firmware_override(tmp_path, moonraker):
+    cfg = make_config(tmp_path)
+    cfg.firmware_version = "3.14.1-8237"
+    cfg.link_version = "0.9.0"
+    b = Bridge(cfg, Moonraker(moonraker.url))
+    b.setup()
+    b.poll()
+    data = events(drain(b.printer), Event.INFO)[0].data
+    assert data["firmware"] == "3.14.1-8237"
+    assert data["prusalink"] == "0.9.0"
+    headers = b.printer.make_headers()
+    assert headers["User-Agent-Version"] == "0.9.0"
 
 
 def test_idle_poll_and_telemetry(bridge, moonraker):
