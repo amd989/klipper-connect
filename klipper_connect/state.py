@@ -4,7 +4,7 @@ Everything here is plain functions/classes with no I/O so it can be tested
 without a printer.
 """
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from prusa.connect.printer.const import State
 
@@ -95,9 +95,45 @@ def material_from_metadata(meta: Dict[str, Any]) -> Optional[str]:
     return str(value).split(";")[0].strip() or None
 
 
+MBL_POINTS = 7  # Prusa MK3 firmware reports a 7x7 mesh
+
+
+def resample_mesh(matrix: List[List[float]],
+                  points: int = MBL_POINTS) -> Optional[List[float]]:
+    """Resample Klipper's mesh to the 7x7 grid PrusaLink sends.
+
+    `matrix` is Klipper's bed_mesh matrix (rows go front to back). The
+    result is flattened back row first, like Prusa's G81 output.
+    """
+    if not matrix or not matrix[0]:
+        return None
+    rows, cols = len(matrix), len(matrix[0])
+
+    def sample(y: float, x: float) -> float:
+        y0, x0 = int(y), int(x)
+        y1, x1 = min(y0 + 1, rows - 1), min(x0 + 1, cols - 1)
+        fy, fx = y - y0, x - x0
+        top = matrix[y0][x0] * (1 - fx) + matrix[y0][x1] * fx
+        bottom = matrix[y1][x0] * (1 - fx) + matrix[y1][x1] * fx
+        return top * (1 - fy) + bottom * fy
+
+    def axis(n: int) -> List[float]:
+        if n == 1:
+            return [0.0] * points
+        return [i * (n - 1) / (points - 1) for i in range(points)]
+
+    result = []
+    for y in reversed(axis(rows)):
+        for x in axis(cols):
+            result.append(round(sample(y, x), 3))
+    return result
+
+
 def build_telemetry(status: Dict[str, Any], state: State, part_fan: str,
                     hotend_fan: str,
-                    meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                    meta: Optional[Dict[str, Any]] = None,
+                    extras: Optional[Dict[str, Any]] = None
+                    ) -> Dict[str, Any]:
     """Build the telemetry kwargs for Printer.telemetry().
 
     `status` is the result of a Moonraker objects query. Missing values are
@@ -136,6 +172,11 @@ def build_telemetry(status: Dict[str, Any], state: State, part_fan: str,
         data["axis_y"] = _round(position[1], 2)
         data["axis_z"] = _round(position[2], 2)
 
+    extras = extras or {}
+    for key in ("material", "total_print_time", "total_filament"):
+        if extras.get(key) is not None:
+            data[key] = extras[key]
+
     if state in (State.PRINTING, State.PAUSED):
         progress = status.get("display_status", {}).get("progress")
         if progress is None:
@@ -148,6 +189,7 @@ def build_telemetry(status: Dict[str, Any], state: State, part_fan: str,
         data["time_remaining"] = time_remaining(print_duration, progress,
                                                 estimated)
         data["inaccurate_estimates"] = not estimated
-        data["material"] = material_from_metadata(meta)
+        data["material"] = (extras.get("material")
+                            or material_from_metadata(meta))
 
     return data

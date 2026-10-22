@@ -29,7 +29,11 @@ from . import __version__
 from .camera import TRIGGERS, WebcamBridge
 from .config import Config
 from .moonraker import Moonraker, MoonrakerError
-from .state import ACTIVE_PRINT_STATES, StateTracker, build_telemetry
+from .state import (ACTIVE_PRINT_STATES, StateTracker, build_telemetry,
+                    resample_mesh)
+
+# How often to refresh things that change slowly (spool, lifetime totals)
+EXTRAS_INTERVAL = 30.0
 
 log = logging.getLogger("klipper-connect")
 
@@ -68,6 +72,11 @@ class KlipperPrinter(Printer):
         info["prusa_link"] = self.software
         info["nozzle_diameter"] = self.nozzle_diameter
         return info
+
+
+def _short(value: Any, limit: int = 300) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else text[:limit] + "..."
 
 
 def make_printer(cfg: Config) -> KlipperPrinter:
@@ -159,6 +168,10 @@ class Bridge:
         self._moonraker_down = False
         self.webcam: Optional[WebcamBridge] = None
         self.info_sent = False
+        # Slow-changing values for telemetry: material, lifetime totals
+        self.extras: Dict[str, Any] = {}
+        self._extras_at: Optional[float] = None
+        self._mesh_key: Optional[str] = None
 
         self._register_handlers()
 
@@ -190,7 +203,8 @@ class Bridge:
         return [
             "webhooks", "print_stats", "virtual_sdcard", "display_status",
             "extruder", "heater_bed", "toolhead", "gcode_move",
-            "idle_timeout", self.cfg.part_fan, self.cfg.hotend_fan
+            "idle_timeout", "bed_mesh", self.cfg.part_fan,
+            self.cfg.hotend_fan
         ]
 
     def _register_handlers(self):
@@ -279,6 +293,9 @@ class Bridge:
             # Klipper restarted (maybe updated): send fresh info when back
             self.info_sent = False
 
+        if "bed_mesh" in status:
+            self._update_mesh(status["bed_mesh"])
+
         print_stats = status.get("print_stats", {})
         print_state = print_stats.get("state", "standby")
         filename = print_stats.get("filename") or None
@@ -332,12 +349,62 @@ class Bridge:
         self.printer.job_id = None
         self.jobs.end()
 
+    def _update_mesh(self, bed_mesh: Dict[str, Any]):
+        """Send the bed mesh to Connect when it changes (after G80 etc.)."""
+        matrix = bed_mesh.get("probed_matrix") or []
+        key = json.dumps([bed_mesh.get("profile_name"), matrix])
+        if key == self._mesh_key:
+            return
+        first = self._mesh_key is None
+        self._mesh_key = key
+        mbl = resample_mesh(matrix)
+        self.printer.mbl = mbl
+        if mbl is None:
+            return
+        log.info("Bed mesh %s (%dx%d) %s", bed_mesh.get("profile_name") or
+                 "(unsaved)", len(matrix[0]), len(matrix),
+                 "loaded" if first else "changed, sending to Connect")
+        if not first:
+            self.printer.event_cb(Event.MESH_BED_DATA, Source.FIRMWARE,
+                                  mbl=mbl)
+
+    def refresh_extras(self, force: bool = False):
+        """Refresh the active spool's material and lifetime totals."""
+        now = time.monotonic()
+        if (not force and self._extras_at is not None
+                and now - self._extras_at < EXTRAS_INTERVAL):
+            return
+        self._extras_at = now
+        extras: Dict[str, Any] = {}
+        try:
+            totals = self.mr.history_totals()
+            extras["total_print_time"] = int(totals.get("total_print_time")
+                                             or 0)
+            extras["total_filament"] = int(totals.get("total_filament_used")
+                                           or 0)
+        except MoonrakerError as err:
+            log.debug("No history totals: %s", err)
+        try:
+            spool_id = self.mr.active_spool_id()
+            if spool_id is not None:
+                filament = self.mr.spool(spool_id).get("filament", {})
+                extras["material"] = filament.get("material")
+        except MoonrakerError as err:
+            log.debug("No Spoolman spool: %s", err)
+        if self.cfg.default_material and not extras.get("material"):
+            extras["material"] = self.cfg.default_material
+        if extras.get("material") != self.extras.get("material"):
+            log.info("Loaded material: %s", extras.get("material"))
+        with self.lock:
+            self.extras = extras
+
     def telemetry(self) -> Dict[str, Any]:
         with self.lock:
             status = self.status
             meta = self.metadata.get(self.job.filename, {}) if self.job else {}
+            extras = dict(self.extras)
         return build_telemetry(status, self.printer.state, self.cfg.part_fan,
-                               self.cfg.hotend_fan, meta)
+                               self.cfg.hotend_fan, meta, extras)
 
     def job_info(self) -> Dict[str, Any]:
         with self.lock:
@@ -501,6 +568,7 @@ class Bridge:
             started = time.monotonic()
             try:
                 self.poll()
+                self.refresh_extras()
                 self.printer.telemetry(**self.telemetry())
                 if self.webcam:
                     self.webcam.tick()
@@ -535,7 +603,14 @@ class Bridge:
         cmd = self.printer.command
         while not self.stop_event.is_set():
             if cmd.new_cmd_evt.wait(0.2):
+                if cmd.state is None:
+                    continue
+                name, args = cmd.command_name, cmd.kwargs or cmd.args
+                log.info("Connect command %s %s: %s", cmd.command_id, name,
+                         _short(args))
                 cmd()
+                log.info("Connect command %s %s -> %s", cmd.command_id,
+                         name, cmd.last_state.value)
 
     def run(self):
         self.setup()

@@ -74,6 +74,11 @@ class FakeMoonraker:
                 "nozzle_diameter": 0.4}}},
         }
         self.metadata = {}
+        self.spool_id = 18
+        self.spools = {18: {"id": 18, "filament": {"name": "Matte PLA Blue",
+                                                   "material": "PLA"}}}
+        self.totals = {"total_print_time": 2265.19,
+                       "total_filament_used": 2385.61}
         self.calls = []  # (method, path, body)
         self.fail_paths = set()
         # Fake crowsnest snapshot endpoint, served from the same server
@@ -121,6 +126,15 @@ class FakeMoonraker:
                     status = {k: v for k, v in fake.status.items()
                               if k in wanted}
                     return self._send(200, {"result": {"status": status}})
+                if path == "/server/history/totals":
+                    return self._send(200, {"result": {
+                        "job_totals": fake.totals}})
+                if path == "/server/spoolman/spool_id":
+                    return self._send(200, {"result": {
+                        "spool_id": fake.spool_id}})
+                if path == "/server/spoolman/proxy":
+                    spool_id = int(body["path"].rsplit("/", 1)[1])
+                    return self._send(200, {"result": fake.spools[spool_id]})
                 if path == "/server/files/metadata":
                     name = query.split("=", 1)[1]
                     if name in fake.metadata:

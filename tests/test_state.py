@@ -91,3 +91,34 @@ def test_telemetry_printing_uses_metadata():
     assert data["time_remaining"] == 1200
     assert data["inaccurate_estimates"] is False
     assert data["material"] == "PETG"
+
+
+def test_resample_mesh_to_7x7():
+    from klipper_connect.state import resample_mesh
+    # 3x3 mesh, rows front to back; value = row*10 + col
+    matrix = [[0, 1, 2], [10, 11, 12], [20, 21, 22]]
+    mbl = resample_mesh(matrix)
+    assert len(mbl) == 49
+    # Back row first, so the first value is the back-left corner
+    assert mbl[0] == 20 and mbl[6] == 22
+    assert mbl[42] == 0 and mbl[48] == 2
+    # Middle of the grid interpolates to the centre point
+    assert mbl[24] == 11
+    assert resample_mesh([[]]) is None
+    assert resample_mesh([]) is None
+
+
+def test_extras_in_telemetry():
+    extras = {"material": "PETG", "total_print_time": 100,
+              "total_filament": 2000}
+    idle = build_telemetry({}, State.IDLE, "fan", "x", {}, extras)
+    assert idle["material"] == "PETG"
+    assert idle["total_print_time"] == 100
+    assert idle["total_filament"] == 2000
+    # Spoolman's material wins over the file's while printing
+    printing = build_telemetry({"print_stats": {}}, State.PRINTING, "fan",
+                               "x", {"filament_type": "PLA"}, extras)
+    assert printing["material"] == "PETG"
+    no_spool = build_telemetry({"print_stats": {}}, State.PRINTING, "fan",
+                               "x", {"filament_type": "PLA"}, {})
+    assert no_spool["material"] == "PLA"

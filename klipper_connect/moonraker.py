@@ -54,6 +54,22 @@ class Moonraker:
         return self._request("GET", "/server/files/metadata",
                              params={"filename": filename})
 
+    def history_totals(self) -> Dict[str, Any]:
+        """Lifetime totals: total_print_time (s), total_filament_used (mm)."""
+        return self._request("GET", "/server/history/totals").get(
+            "job_totals", {})
+
+    def active_spool_id(self) -> Optional[int]:
+        """Spoolman's active spool, or None (also if Spoolman isn't set up)."""
+        return self._request("GET", "/server/spoolman/spool_id").get(
+            "spool_id")
+
+    def spool(self, spool_id: int) -> Dict[str, Any]:
+        return self._request("POST", "/server/spoolman/proxy", json={
+            "request_method": "GET",
+            "path": f"/v1/spool/{spool_id}",
+        })
+
     # --- actions ----------------------------------------------------------
 
     def start_print(self, filename: str) -> None:

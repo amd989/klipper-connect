@@ -31,6 +31,8 @@ class Config:
     # Firmware version reported to Connect. Empty = Klipper's version,
     # reformatted the way Prusa firmware reports it (e.g. 0.12.0-123).
     firmware_version: str = ""
+    # Material shown in Connect when Spoolman has no active spool
+    default_material: str = ""
 
     # [connect]
     connect_hostname: str = "connect.prusa3d.com"
@@ -111,6 +113,7 @@ def load(path: str) -> Config:
     cfg.part_fan = get("printer", "part_fan", cfg.part_fan)
     cfg.hotend_fan = get("printer", "hotend_fan", cfg.hotend_fan)
     cfg.firmware_version = get("printer", "firmware_version", "")
+    cfg.default_material = get("printer", "default_material", "")
 
     cfg.connect_hostname = get("connect", "hostname", cfg.connect_hostname)
     if ini.has_option("connect", "tls"):

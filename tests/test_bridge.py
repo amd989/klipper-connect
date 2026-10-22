@@ -446,3 +446,62 @@ def test_firmware_version_format():
     assert firmware_version("v0.12.0-test") == "0.12.0-0"
     assert firmware_version("weird") is None
     assert firmware_version(None) is None
+
+
+def test_material_and_totals_from_moonraker(bridge, moonraker):
+    bridge.poll()
+    bridge.refresh_extras(force=True)
+    data = bridge.telemetry()
+    assert data["material"] == "PLA"
+    assert data["total_print_time"] == 2265
+    assert data["total_filament"] == 2385
+
+    # No active spool -> falls back to default_material, else nothing
+    moonraker.spool_id = None
+    bridge.refresh_extras(force=True)
+    assert "material" not in bridge.telemetry()
+    bridge.cfg.default_material = "PETG"
+    bridge.refresh_extras(force=True)
+    assert bridge.telemetry()["material"] == "PETG"
+
+
+def test_extras_survive_missing_spoolman(bridge, moonraker):
+    moonraker.fail_paths.update({"/server/spoolman/spool_id",
+                                 "/server/history/totals"})
+    bridge.refresh_extras(force=True)
+    data = bridge.telemetry()
+    assert "material" not in data and "total_print_time" not in data
+
+
+def test_mesh_sent_when_it_changes(bridge, moonraker):
+    moonraker.status["bed_mesh"] = {"profile_name": "",
+                                    "probed_matrix": [[]]}
+    bridge.poll()
+    drain(bridge.printer)
+    assert bridge.printer.mbl is None
+
+    moonraker.status["bed_mesh"] = {
+        "profile_name": "default",
+        "probed_matrix": [[0.1, 0.2], [0.3, 0.4]]}
+    bridge.poll()
+    mesh = events(drain(bridge.printer), Event.MESH_BED_DATA)
+    assert len(mesh) == 1 and len(mesh[0].data["mbl"]) == 49
+    assert bridge.printer.mbl == mesh[0].data["mbl"]
+
+    bridge.poll()  # unchanged -> not sent again
+    assert not events(drain(bridge.printer), Event.MESH_BED_DATA)
+    # The mesh is also part of the INFO report
+    assert bridge.printer.get_info()["mbl"] == mesh[0].data["mbl"]
+
+
+def test_commands_are_logged(bridge, moonraker, caplog):
+    import logging
+    bridge.poll()
+    bridge.printer.command.accept(5, "GCODE", kwargs={"gcode": "G28"})
+    caplog.set_level(logging.INFO, logger="klipper-connect")
+    worker = threading.Thread(target=bridge.run_commands, daemon=True)
+    worker.start()
+    assert wait_for(lambda: "-> FINISHED" in caplog.text)
+    bridge.stop_event.set()
+    worker.join(2)
+    assert "Connect command 5 GCODE: {'gcode': 'G28'}" in caplog.text

@@ -11,6 +11,9 @@ part_fan: fan
 hotend_fan: heater_fan nozzle_cooling_fan
 # Firmware version shown in Connect. Empty = Klipper's version (0.12.0-123).
 #firmware_version:
+# Material Connect shows as loaded. Taken from Spoolman's active spool when
+# Spoolman is set up in moonraker.conf; this is the fallback.
+#default_material: PLA
 
 [connect]
 hostname: connect.prusa3d.com
