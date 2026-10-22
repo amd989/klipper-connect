@@ -9,12 +9,15 @@ type: MK3S
 # Klipper object names for the fans (used for RPM / power telemetry)
 part_fan: fan
 hotend_fan: heater_fan nozzle_cooling_fan
-# Firmware version shown in Connect. Leave empty to report Klipper's version.
+# Firmware version shown in Connect. Empty = Klipper's version (0.12.0-123).
 #firmware_version:
 
 [connect]
 hostname: connect.prusa3d.com
 tls: True
+# Connect reads this as the PrusaLink version and warns when it's older than
+# PrusaLink's latest release. Bump it if Connect says it's deprecated.
+#link_version: 0.8.1
 # Written by `klipper-connect register`. Kept out of the config folder so the
 # token doesn't end up in config backups.
 #credentials_file: ~/printer_data/klipper_connect/prusa_connect.ini

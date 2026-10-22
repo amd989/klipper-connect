@@ -28,13 +28,17 @@ class Config:
     printer_type: PrinterType
     part_fan: str = "fan"
     hotend_fan: str = "heater_fan nozzle_cooling_fan"
-    # Firmware version reported to Connect. Empty = Klipper's version string.
+    # Firmware version reported to Connect. Empty = Klipper's version,
+    # reformatted the way Prusa firmware reports it (e.g. 0.12.0-123).
     firmware_version: str = ""
 
     # [connect]
     connect_hostname: str = "connect.prusa3d.com"
     connect_tls: bool = True
     connect_port: int = 0
+    # Connect treats this as the PrusaLink version and flags anything older
+    # than its latest release as deprecated.
+    link_version: str = "0.8.1"
     # File holding the token. Kept outside the Klipper config folder on
     # purpose, so it doesn't end up in a config backup/git repo.
     credentials_file: str = "~/printer_data/klipper_connect/prusa_connect.ini"
@@ -113,6 +117,7 @@ def load(path: str) -> Config:
         cfg.connect_tls = ini.getboolean("connect", "tls")
     if ini.has_option("connect", "port"):
         cfg.connect_port = ini.getint("connect", "port")
+    cfg.link_version = get("connect", "link_version", cfg.link_version)
     cfg.credentials_file = _path(
         get("connect", "credentials_file", cfg.credentials_file))
     cfg.state_file = _path(get("connect", "state_file", cfg.state_file))

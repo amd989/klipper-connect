@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import posixpath
+import re
 import socket
 import threading
 import time
@@ -36,6 +37,20 @@ log = logging.getLogger("klipper-connect")
 STARTABLE = {State.IDLE, State.READY, State.FINISHED, State.STOPPED}
 # States in which a job (and its job_id) is still current
 JOB_STATES = {State.PRINTING, State.PAUSED, State.FINISHED, State.STOPPED}
+
+
+KLIPPER_VERSION = re.compile(r"^v?(\d+\.\d+\.\d+)(?:-(\d+))?")
+
+
+def firmware_version(klipper_version: Optional[str]) -> Optional[str]:
+    """'v0.12.0-123-gabc' -> '0.12.0-123' (Prusa firmware style, which is
+    the format Connect understands)."""
+    if not klipper_version:
+        return None
+    match = KLIPPER_VERSION.match(klipper_version)
+    if not match:
+        return None
+    return f"{match.group(1)}-{match.group(2) or 0}"
 
 
 def make_printer(cfg: Config) -> Printer:
@@ -184,8 +199,9 @@ class Bridge:
     def setup(self):
         p = self.printer
         p.connection_from_config(self.cfg.credentials_file)
-        p.software = f"klipper-connect {__version__}"
-        p.firmware = self.cfg.firmware_version or self._klipper_version()
+        p.software = self.cfg.link_version
+        p.firmware = (self.cfg.firmware_version
+                      or firmware_version(self._klipper_version()))
         p.network_info.update(network_info())
         os.makedirs(self.cfg.gcodes_path, exist_ok=True)
         p.attach(self.cfg.gcodes_path, self.cfg.storage_name)
@@ -484,6 +500,8 @@ class Bridge:
     def run(self):
         self.setup()
         self.start_threads()
+        log.info("klipper-connect %s, reporting firmware %s",
+                 __version__, self.printer.firmware)
         log.info("Bridge running: %s (%s) -> %s", self.cfg.serial_number,
                  self.cfg.printer_type.name, self.cfg.connect_server)
         try:

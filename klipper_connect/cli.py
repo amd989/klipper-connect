@@ -7,7 +7,7 @@ import threading
 
 from . import __version__
 from . import config as config_mod
-from .bridge import Bridge, make_printer
+from .bridge import Bridge, firmware_version, make_printer
 from .moonraker import Moonraker, MoonrakerError
 
 log = logging.getLogger("klipper-connect")
@@ -31,7 +31,8 @@ def cmd_register(cfg: config_mod.Config) -> int:
     try:
         info = Moonraker(cfg.moonraker_url, cfg.moonraker_api_key)\
             .printer_info()
-        printer.firmware = cfg.firmware_version or info.get("software_version")
+        printer.firmware = (cfg.firmware_version
+                            or firmware_version(info.get("software_version")))
     except MoonrakerError:
         printer.firmware = cfg.firmware_version or None
 
@@ -41,6 +42,7 @@ def cmd_register(cfg: config_mod.Config) -> int:
         config_mod.save_credentials(cfg, token)
         done.set()
 
+    printer.software = cfg.link_version
     printer.register_handler = on_token
     code = printer.register()
     url = f"{cfg.connect_server}/add-printer/connect/{printer.type}/{code}"

@@ -65,7 +65,8 @@ def run_command(printer, name, kwargs=None, command_id=1):
 
 
 def test_setup_reports_firmware_and_files(bridge):
-    assert bridge.printer.firmware == "v0.12.0-test"
+    assert bridge.printer.firmware == "0.12.0-0"
+    assert bridge.printer.software == "0.8.1"
     assert bridge.printer.token == "test-token"
     inserted = events(drain(bridge.printer), Event.MEDIUM_INSERTED)
     assert inserted and inserted[0].data["root"] == "/local"
@@ -395,3 +396,12 @@ def test_end_to_end_download_then_print(tmp_path, moonraker):
         bridge.stop_event.set()
         runner.join(5)
         connect.server.shutdown()
+
+
+def test_firmware_version_format():
+    from klipper_connect.bridge import firmware_version
+    assert firmware_version("v0.12.0-123-gabcdef") == "0.12.0-123"
+    assert firmware_version("v0.13.0") == "0.13.0-0"
+    assert firmware_version("v0.12.0-test") == "0.12.0-0"
+    assert firmware_version("weird") is None
+    assert firmware_version(None) is None
