@@ -1,4 +1,7 @@
-# KlipperConnect - copy to ~/printer_data/config/klipper_connect.conf
+# KlipperConnect - copy to <printer_data>/config/klipper_connect.conf
+#
+# Paths below default to the printer_data folder this file is in
+# (<printer_data>/gcodes, <printer_data>/klipper_connect/...).
 
 [printer]
 # The serial number on the sticker on the back of the printer (CZPX...).
@@ -23,8 +26,8 @@ tls: True
 #link_version: 0.8.1
 # Written by `klipper-connect register`. Kept out of the config folder so the
 # token doesn't end up in config backups.
-#credentials_file: ~/printer_data/klipper_connect/prusa_connect.ini
-#state_file: ~/printer_data/klipper_connect/state.json
+#credentials_file: <printer_data>/klipper_connect/prusa_connect.ini
+#state_file: <printer_data>/klipper_connect/state.json
 
 [moonraker]
 url: http://127.0.0.1:7125
@@ -34,7 +37,7 @@ url: http://127.0.0.1:7125
 [storage]
 # Files show up in Connect under /<name>/...
 name: local
-gcodes_path: ~/printer_data/gcodes
+#gcodes_path: <printer_data>/gcodes
 
 [macros]
 load_filament: LOAD_FILAMENT
@@ -53,9 +56,11 @@ name: Webcam
 # When to send a snapshot: 10, 30 or 60 (seconds), layer, 5layers or manual.
 # Layer triggers need the slicer to emit SET_PRINT_STATS_INFO CURRENT_LAYER=..
 trigger: 30
-#token_file: ~/printer_data/klipper_connect/camera.json
+#token_file: <printer_data>/klipper_connect/camera.json
 
 [bridge]
+# printer_data folder; only needed if this file isn't in <printer_data>/config
+#data_dir: ~/printer_data
 # Send details/thumbnails of the N newest files up front (0 = on demand only)
 file_info_count: 20
 telemetry_interval: 1.0

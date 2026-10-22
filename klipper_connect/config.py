@@ -94,6 +94,18 @@ def _path(value: str) -> str:
     return os.path.abspath(os.path.expanduser(value))
 
 
+def default_data_dir(config_path: str) -> str:
+    """printer_data folder for a config file.
+
+    <data>/config/klipper_connect.conf -> <data>; anything else falls back
+    to ~/printer_data.
+    """
+    config_dir = os.path.dirname(config_path)
+    if os.path.basename(config_dir) == "config":
+        return os.path.dirname(config_dir)
+    return _path("~/printer_data")
+
+
 def load(path: str) -> Config:
     path = _path(path)
     if not os.path.exists(path):
@@ -105,6 +117,10 @@ def load(path: str) -> Config:
         if ini.has_option(section, key):
             return ini.get(section, key).strip()
         return default
+
+    # Paths not set in the file are relative to the printer_data folder
+    data_dir = _path(get("bridge", "data_dir") or default_data_dir(path))
+    own_dir = os.path.join(data_dir, "klipper_connect")
 
     serial_number = get("printer", "serial_number")
     if not serial_number:
@@ -128,9 +144,11 @@ def load(path: str) -> Config:
     if ini.has_option("connect", "port"):
         cfg.connect_port = ini.getint("connect", "port")
     cfg.link_version = get("connect", "link_version", cfg.link_version)
-    cfg.credentials_file = _path(
-        get("connect", "credentials_file", cfg.credentials_file))
-    cfg.state_file = _path(get("connect", "state_file", cfg.state_file))
+    cfg.credentials_file = _path(get(
+        "connect", "credentials_file",
+        os.path.join(own_dir, "prusa_connect.ini")))
+    cfg.state_file = _path(get("connect", "state_file",
+                               os.path.join(own_dir, "state.json")))
 
     cfg.moonraker_url = get("moonraker", "url", cfg.moonraker_url).rstrip("/")
     cfg.moonraker_api_key = get("moonraker", "api_key", "")
@@ -138,7 +156,8 @@ def load(path: str) -> Config:
     cfg.storage_name = get("storage", "name", cfg.storage_name)
     if "/" in cfg.storage_name or not cfg.storage_name:
         raise ValueError("[storage] name must be non-empty and contain no '/'")
-    cfg.gcodes_path = _path(get("storage", "gcodes_path", cfg.gcodes_path))
+    cfg.gcodes_path = _path(get("storage", "gcodes_path",
+                                os.path.join(data_dir, "gcodes")))
 
     cfg.load_filament = get("macros", "load_filament", cfg.load_filament)
     cfg.unload_filament = get("macros", "unload_filament", cfg.unload_filament)
@@ -152,7 +171,8 @@ def load(path: str) -> Config:
     if cfg.camera_trigger not in CAMERA_TRIGGERS:
         raise ValueError(f"[camera] trigger must be one of "
                          f"{', '.join(CAMERA_TRIGGERS)}")
-    cfg.camera_file = _path(get("camera", "token_file", cfg.camera_file))
+    cfg.camera_file = _path(get("camera", "token_file",
+                                os.path.join(own_dir, "camera.json")))
 
     if ini.has_option("bridge", "file_info_count"):
         cfg.file_info_count = ini.getint("bridge", "file_info_count")

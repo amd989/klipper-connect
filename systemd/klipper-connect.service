@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=%USER%
 WorkingDirectory=%HOME%
-ExecStart=%HOME%/klipper-connect-env/bin/klipper-connect -c %HOME%/printer_data/config/klipper_connect.conf run
+ExecStart=%ENV%/bin/klipper-connect -c %CONFIG% run
 Restart=always
 RestartSec=10
 

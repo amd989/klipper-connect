@@ -39,16 +39,40 @@ cd ~/KlipperConnect
 ./scripts/install.sh
 ```
 
+The installer:
+- sets up a Python environment in `~/klipper-connect-env`
+- copies the example config to `<config>/klipper_connect.conf` (an
+  existing config is kept)
+- installs and enables the `klipper-connect` systemd service
+- adds KlipperConnect to Moonraker's update manager in `moonraker.conf`
+  and restarts Moonraker, so it shows up in Mainsail/Fluidd's update panel
+  (skipped if an `[update_manager klipper-connect]` section already exists)
+
+It can be run again at any time; it keeps your config.
+
+Options for other folder layouts (multiple printers, custom paths):
+
+| Option | Meaning | Default |
+|---|---|---|
+| `-d DIR` | printer_data folder | `~/printer_data` |
+| `-c DIR` | Klipper config folder | `<printer_data>/config` |
+| `-e DIR` | Python environment | `~/klipper-connect-env` |
+| `-m NAME` | Moonraker's systemd service | `moonraker` |
+| `-M` | don't touch `moonraker.conf` | |
+
+For example: `./scripts/install.sh -d ~/printer_2_data -m moonraker-2`.
+
 Then:
 
-1. Edit `~/printer_data/config/klipper_connect.conf` and set
+1. Edit `<config>/klipper_connect.conf` and set
    `serial_number` to the `CZPX...` number on the printer's sticker.
 2. Link the printer to your Connect account:
    ```bash
-   ~/klipper-connect-env/bin/klipper-connect register
+   ~/klipper-connect-env/bin/klipper-connect -c <config>/klipper_connect.conf register
    ```
-   Open the link it prints and confirm. The token goes to
-   `~/printer_data/klipper_connect/prusa_connect.ini`, which is outside the
+   (the installer prints the exact command). Open the link it prints and
+   confirm. The token goes to
+   `<printer_data>/klipper_connect/prusa_connect.ini`, which is outside the
    config folder so it doesn't end up in config backups.
 3. Start it:
    ```bash
@@ -74,10 +98,13 @@ Camera tab. It sends a snapshot every 10, 30 or 60 seconds, or on each layer
 starts, finishes or is stopped. Layer triggers need the slicer to report
 layers to Klipper (`SET_PRINT_STATS_INFO CURRENT_LAYER=...`, which
 PrusaSlicer can add in its layer-change G-code). The camera token is stored
-in `~/printer_data/klipper_connect/camera.json`. If the webcam is
+in `<printer_data>/klipper_connect/camera.json`. If the webcam is
 unreachable, KlipperConnect logs it once and keeps trying.
 
-### Moonraker update manager (optional)
+### Moonraker update manager
+
+The installer adds this section to `moonraker.conf` (use `-M` to skip it and
+add it yourself, e.g. if `moonraker.conf` is in a git repo):
 
 ```ini
 [update_manager klipper-connect]
