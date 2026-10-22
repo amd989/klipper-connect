@@ -28,7 +28,10 @@ Prusa Connect  <──HTTPS──>  klipper-connect  <──HTTP──>  Moonrak
 | Set printer ready | handled by the SDK |
 | Camera | snapshots from crowsnest (or any JPEG URL), see below |
 
-Not done yet: binary G-code (`.bgcode`), mesh bed data, dialogs,
+Also: loaded material from Spoolman, lifetime totals from Moonraker's
+history, and the bed mesh after leveling.
+
+Not done yet: binary G-code (`.bgcode`), dialogs (e.g. M600 prompts),
 Connect-triggered updates.
 
 ## Install (on the Klipper host)
