@@ -1,0 +1,41 @@
+# KlipperConnect - copy to ~/printer_data/config/klipper_connect.conf
+
+[printer]
+# The serial number on the sticker on the back of the printer (CZPX...).
+# Connect identifies the printer by it.
+serial_number: CZPX0000X000XC00000
+# MK3S, MK3, MK25 or MK25S
+type: MK3S
+# Klipper object names for the fans (used for RPM / power telemetry)
+part_fan: fan
+hotend_fan: heater_fan nozzle_cooling_fan
+# Firmware version shown in Connect. Leave empty to report Klipper's version.
+#firmware_version:
+
+[connect]
+hostname: connect.prusa3d.com
+tls: True
+# Written by `klipper-connect register`. Kept out of the config folder so the
+# token doesn't end up in config backups.
+#credentials_file: ~/printer_data/klipper_connect/prusa_connect.ini
+#state_file: ~/printer_data/klipper_connect/state.json
+
+[moonraker]
+url: http://127.0.0.1:7125
+# Only needed if this host isn't a trusted client in moonraker.conf
+#api_key:
+
+[storage]
+# Files show up in Connect under /<name>/...
+name: local
+gcodes_path: ~/printer_data/gcodes
+
+[macros]
+load_filament: LOAD_FILAMENT
+unload_filament: UNLOAD_FILAMENT
+# Parameter the macros take for the nozzle temperature (empty = none)
+filament_temp_param: TEMP
+
+[bridge]
+telemetry_interval: 1.0
+log_level: INFO

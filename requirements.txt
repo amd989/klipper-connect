@@ -1,0 +1,2 @@
+prusa.connect.sdk.printer==0.8.1
+requests>=2.25

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+
+# Never commit Connect credentials
+prusa_connect.ini
+*.state.json

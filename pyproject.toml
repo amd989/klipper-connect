@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "klipper-connect"
+version = "0.1.0"
+description = "Bridge a Klipper/Moonraker printer to Prusa Connect"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "prusa.connect.sdk.printer==0.8.1",
+    "requests>=2.25",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+klipper-connect = "klipper_connect.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["klipper_connect*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

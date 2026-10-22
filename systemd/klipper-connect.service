@@ -1,0 +1,15 @@
+[Unit]
+Description=KlipperConnect - Prusa Connect bridge for Klipper
+After=network-online.target moonraker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%HOME%
+ExecStart=%HOME%/klipper-connect-env/bin/klipper-connect -c %HOME%/printer_data/config/klipper_connect.conf run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
