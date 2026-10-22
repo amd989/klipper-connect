@@ -36,6 +36,16 @@ unload_filament: UNLOAD_FILAMENT
 # Parameter the macros take for the nozzle temperature (empty = none)
 filament_temp_param: TEMP
 
+[camera]
+# Uncomment snapshot_url to send webcam snapshots to Connect.
+# crowsnest/ustreamer serves one on its port (8080 for [cam 1]):
+#snapshot_url: http://127.0.0.1:8080/?action=snapshot
+name: Webcam
+# When to send a snapshot: 10, 30 or 60 (seconds), layer, 5layers or manual.
+# Layer triggers need the slicer to emit SET_PRINT_STATS_INFO CURRENT_LAYER=..
+trigger: 30
+#token_file: ~/printer_data/klipper_connect/camera.json
+
 [bridge]
 telemetry_interval: 1.0
 log_level: INFO

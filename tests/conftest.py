@@ -74,6 +74,9 @@ class FakeMoonraker:
         self.metadata = {}
         self.calls = []  # (method, path, body)
         self.fail_paths = set()
+        # Fake crowsnest snapshot endpoint, served from the same server
+        self.webcam_down = False
+        self.jpeg = b"\xff\xd8\xff\xe0fake-jpeg\xff\xd9"
 
         fake = self
 
@@ -94,6 +97,15 @@ class FakeMoonraker:
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length)) if length else None
                 fake.calls.append((method, path, body or query))
+                if path == "/webcam/snapshot":
+                    if fake.webcam_down:
+                        return self._send(500, {"error": "down"})
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(fake.jpeg)))
+                    self.end_headers()
+                    self.wfile.write(fake.jpeg)
+                    return
                 if path in fake.fail_paths:
                     return self._send(400, {"error": {"message": "nope"}})
                 if path == "/server/info":

@@ -5,6 +5,7 @@ Threads:
   * download loop   - downloads files Connect sends into the gcodes folder
   * inotify loop    - keeps the SDK's file listing in sync with the folder
   * telemetry loop  - polls Moonraker, updates state, queues telemetry
+  * camera loop     - uploads webcam snapshots (only with [camera])
   * main thread     - runs Connect commands as they arrive
 """
 import json
@@ -24,6 +25,7 @@ from prusa.connect.printer.const import Event, Source, State
 from prusa.connect.printer.util import make_fingerprint
 
 from . import __version__
+from .camera import TRIGGERS, WebcamBridge
 from .config import Config
 from .moonraker import Moonraker, MoonrakerError
 from .state import ACTIVE_PRINT_STATES, StateTracker, build_telemetry
@@ -121,6 +123,7 @@ class Bridge:
         self.pending_start_cmd_id: Optional[int] = None
         self.metadata: Dict[str, Dict[str, Any]] = {}
         self._moonraker_down = False
+        self.webcam: Optional[WebcamBridge] = None
 
         self._register_handlers()
 
@@ -186,6 +189,14 @@ class Bridge:
         p.network_info.update(network_info())
         os.makedirs(self.cfg.gcodes_path, exist_ok=True)
         p.attach(self.cfg.gcodes_path, self.cfg.storage_name)
+        if self.cfg.camera_url:
+            try:
+                self.webcam = WebcamBridge(p, self.cfg.camera_url,
+                                           self.cfg.camera_name,
+                                           TRIGGERS[self.cfg.camera_trigger],
+                                           self.cfg.camera_file)
+            except Exception:  # pylint: disable=broad-except
+                log.exception("Camera setup failed; running without it")
 
     def _klipper_version(self) -> Optional[str]:
         try:
@@ -231,11 +242,18 @@ class Bridge:
                 self._end_job()
             self.first_poll = False
 
-        if state != self.printer.state:
+        changed = state != self.printer.state
+        if changed:
             log.info("State %s -> %s", self.printer.state.value, state.value)
             self.printer.set_state(state, Source.FIRMWARE)
         if new_job:
             self._send_job_info()
+        if self.webcam:
+            layer = print_stats.get("info", {}).get("current_layer")
+            self.webcam.layer(layer if state == State.PRINTING else None)
+            if changed and state in (State.PRINTING, State.FINISHED,
+                                     State.STOPPED):
+                self.webcam.snap()
         return state
 
     def _begin_job(self, filename: str):
@@ -428,6 +446,8 @@ class Bridge:
             try:
                 self.poll()
                 self.printer.telemetry(**self.telemetry())
+                if self.webcam:
+                    self.webcam.tick()
             except Exception:  # pylint: disable=broad-except
                 log.exception("Telemetry loop error")
             self.stop_event.wait(max(0.0,
@@ -448,6 +468,9 @@ class Bridge:
             "inotify-loop": self._inotify_loop,
             "telemetry-loop": self._telemetry_loop,
         }
+        if self.webcam:
+            targets["camera-loop"] = self.printer.camera_controller.\
+                snapshot_loop
         for name, target in targets.items():
             threading.Thread(target=target, name=name, daemon=True).start()
 
@@ -472,3 +495,5 @@ class Bridge:
         self.stop_event.set()
         self.printer.stop_loop()
         self.printer.download_mgr.stop_loop()
+        if self.webcam:
+            self.webcam.stop()

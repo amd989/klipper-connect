@@ -241,6 +241,8 @@ class FakeConnect:
         self.commands = list(commands)
         self.events = []
         self.telemetry = []
+        self.camera_registrations = []
+        self.snapshots = []  # (headers, body)
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -265,6 +267,21 @@ class FakeConnect:
                         return
                 elif self.path == "/p/events":
                     fake.events.append(body)
+                elif self.path == "/p/camera":
+                    fake.camera_registrations.append(body)
+                    self.send_response(200)
+                    self.send_header("Token", "cam-token")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(204)
+                self.end_headers()
+
+            def do_PUT(self):  # noqa: N802
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length)
+                if self.path.startswith("/c/snapshot"):
+                    fake.snapshots.append((dict(self.headers), body))
                 self.send_response(204)
                 self.end_headers()
 

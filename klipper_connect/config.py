@@ -16,6 +16,8 @@ PRINTER_TYPES = {
     "MK25S": PrinterType.I3MK25S,
 }
 
+CAMERA_TRIGGERS = ("10", "30", "60", "layer", "5layers", "manual")
+
 DEFAULT_CONFIG_PATH = "~/printer_data/config/klipper_connect.conf"
 
 
@@ -51,6 +53,13 @@ class Config:
     unload_filament: str = "UNLOAD_FILAMENT"
     # Parameter name for the nozzle temperature, empty to never pass one
     filament_temp_param: str = "TEMP"
+
+    # [camera] - only active when snapshot_url is set
+    camera_url: str = ""
+    camera_name: str = "Webcam"
+    # 10, 30, 60 (seconds), layer, 5layers or manual
+    camera_trigger: str = "30"
+    camera_file: str = "~/printer_data/klipper_connect/camera.json"
 
     # [bridge]
     telemetry_interval: float = 1.0
@@ -120,6 +129,14 @@ def load(path: str) -> Config:
     cfg.unload_filament = get("macros", "unload_filament", cfg.unload_filament)
     cfg.filament_temp_param = get("macros", "filament_temp_param",
                                   cfg.filament_temp_param)
+
+    cfg.camera_url = get("camera", "snapshot_url", "")
+    cfg.camera_name = get("camera", "name", cfg.camera_name)
+    cfg.camera_trigger = get("camera", "trigger", cfg.camera_trigger).lower()
+    if cfg.camera_trigger not in CAMERA_TRIGGERS:
+        raise ValueError(f"[camera] trigger must be one of "
+                         f"{', '.join(CAMERA_TRIGGERS)}")
+    cfg.camera_file = _path(get("camera", "token_file", cfg.camera_file))
 
     if ini.has_option("bridge", "telemetry_interval"):
         cfg.telemetry_interval = ini.getfloat("bridge", "telemetry_interval")

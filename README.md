@@ -26,9 +26,10 @@ Prusa Connect  <──HTTPS──>  klipper-connect  <──HTTP──>  Moonrak
 | Load / unload filament | `LOAD_FILAMENT` / `UNLOAD_FILAMENT` macros |
 | Reset printer | `FIRMWARE_RESTART` |
 | Set printer ready | handled by the SDK |
+| Camera | snapshots from crowsnest (or any JPEG URL), see below |
 
-Not done yet: camera snapshots, binary G-code (`.bgcode`), mesh bed data,
-dialogs, Connect-triggered updates.
+Not done yet: binary G-code (`.bgcode`), mesh bed data, dialogs,
+Connect-triggered updates.
 
 ## Install (on the Klipper host)
 
@@ -55,6 +56,27 @@ Then:
    journalctl -u klipper-connect -f
    ```
 
+### Camera (optional)
+
+Point `[camera] snapshot_url` at a URL that returns one JPEG. With crowsnest
+that's the ustreamer port of your camera:
+
+```ini
+[camera]
+snapshot_url: http://127.0.0.1:8080/?action=snapshot
+name: Webcam
+trigger: 30
+```
+
+The camera registers with Connect by itself and appears under the printer's
+Camera tab. It sends a snapshot every 10, 30 or 60 seconds, or on each layer
+(`layer`) or every fifth layer (`5layers`). It also sends one when a print
+starts, finishes or is stopped. Layer triggers need the slicer to report
+layers to Klipper (`SET_PRINT_STATS_INFO CURRENT_LAYER=...`, which
+PrusaSlicer can add in its layer-change G-code). The camera token is stored
+in `~/printer_data/klipper_connect/camera.json`. If the webcam is
+unreachable, KlipperConnect logs it once and keeps trying.
+
 ### Moonraker update manager (optional)
 
 ```ini
@@ -78,6 +100,10 @@ managed_services: klipper-connect
 - **State mapping:** Klipper keeps "complete" or "cancelled" until the next
   print. KlipperConnect shows FINISHED/STOPPED for 11 seconds (as PrusaLink
   does), then IDLE.
+- **Serial number:** Connect identifies the printer by its serial number
+  (and a hash of it). Use the real one from the sticker. If the printer
+  is connected over USB, it is also in the
+  `/dev/serial/by-id/...Original_Prusa_i3_MK3_CZPX...` device name.
 - **Job ids** are stored in `state.json`, so Connect sees one continuous job
   if the bridge restarts mid-print.
 
