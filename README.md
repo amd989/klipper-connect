@@ -8,9 +8,16 @@ own [Connect SDK](https://github.com/prusa3d/Prusa-Connect-SDK-Printer), the
 same library PrusaLink uses, so Connect sees a regular Original Prusa
 printer (MK3S tested; MINI experimental).
 
-```
-Prusa Connect  <──HTTPS──>  klipper-connect  <──HTTP──>  Moonraker  <──>  Klipper
-                            (Connect SDK)
+```mermaid
+flowchart LR
+    connect["Prusa Connect"]
+    bridge["klipper-connect<br/>(Connect SDK)"]
+    moonraker["Moonraker"]
+    klipper["Klipper"]
+
+    connect <-- "HTTPS" --> bridge
+    bridge <-- "HTTP" --> moonraker
+    moonraker <--> klipper
 ```
 
 > This is an independent community project. It isn't affiliated with,
