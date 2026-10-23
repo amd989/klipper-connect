@@ -7,11 +7,18 @@ name = "klipper-connect"
 version = "0.1.0"
 description = "Bridge a Klipper/Moonraker printer to Prusa Connect"
 readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Alejandro Mora"}]
+keywords = ["klipper", "moonraker", "prusa-connect", "3d-printing"]
 requires-python = ">=3.9"
 dependencies = [
     "prusa.connect.sdk.printer==0.8.1",
     "requests>=2.25",
 ]
+
+[project.urls]
+Homepage = "https://github.com/amd989/klipper-connect"
+Issues = "https://github.com/amd989/klipper-connect/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]

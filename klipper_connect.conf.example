@@ -1,4 +1,4 @@
-# KlipperConnect - copy to <printer_data>/config/klipper_connect.conf
+# klipper-connect - copy to <printer_data>/config/klipper_connect.conf
 #
 # Paths below default to the printer_data folder this file is in
 # (<printer_data>/gcodes, <printer_data>/klipper_connect/...).

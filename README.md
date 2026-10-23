@@ -1,18 +1,23 @@
-# KlipperConnect
+# klipper-connect
 
-Connects a Klipper printer to [Prusa Connect](https://connect.prusa3d.com).
-KlipperConnect runs as a small service next to Moonraker. It uses Prusa's own
-[Connect SDK](https://github.com/prusa3d/Prusa-Connect-SDK-Printer), the same
-library PrusaLink uses, so Connect sees a normal MK3S.
+[![Tests](https://github.com/amd989/klipper-connect/actions/workflows/tests.yml/badge.svg)](https://github.com/amd989/klipper-connect/actions/workflows/tests.yml)
+
+Use [Prusa Connect](https://connect.prusa3d.com) with a Klipper printer.
+klipper-connect runs as a small service next to Moonraker. It uses Prusa's
+own [Connect SDK](https://github.com/prusa3d/Prusa-Connect-SDK-Printer), the
+same library PrusaLink uses, so Connect sees a regular Original Prusa
+printer (MK3S tested; MINI experimental).
 
 ```
 Prusa Connect  <──HTTPS──>  klipper-connect  <──HTTP──>  Moonraker  <──>  Klipper
                             (Connect SDK)
 ```
 
-> This project isn't affiliated with or supported by Prusa Research.
+> This is an independent community project. It isn't affiliated with,
+> endorsed by or supported by Prusa Research. "Prusa" and "Prusa Connect"
+> are used only to describe what it works with.
 
-## What works (MVP)
+## What works
 
 | Connect | Klipper / Moonraker |
 |---|---|
@@ -37,8 +42,8 @@ Connect-triggered updates.
 ## Install (on the Klipper host)
 
 ```bash
-git clone <this repo> ~/KlipperConnect
-cd ~/KlipperConnect
+git clone https://github.com/amd989/klipper-connect.git ~/klipper-connect
+cd ~/klipper-connect
 ./scripts/install.sh
 ```
 
@@ -47,7 +52,7 @@ The installer:
 - copies the example config to `<config>/klipper_connect.conf` (an
   existing config is kept)
 - installs and enables the `klipper-connect` systemd service
-- adds KlipperConnect to Moonraker's update manager in `moonraker.conf`
+- adds klipper-connect to Moonraker's update manager in `moonraker.conf`
   and restarts Moonraker, so it shows up in Mainsail/Fluidd's update panel
   (skipped if an `[update_manager klipper-connect]` section already exists)
 
@@ -114,7 +119,7 @@ starts, finishes or is stopped. Layer triggers need the slicer to report
 layers to Klipper (`SET_PRINT_STATS_INFO CURRENT_LAYER=...`, which
 PrusaSlicer can add in its layer-change G-code). The camera token is stored
 in `<printer_data>/klipper_connect/camera.json`. If the webcam is
-unreachable, KlipperConnect logs it once and keeps trying.
+unreachable, klipper-connect logs it once and keeps trying.
 
 ### Moonraker update manager
 
@@ -124,8 +129,8 @@ add it yourself, e.g. if `moonraker.conf` is in a git repo):
 ```ini
 [update_manager klipper-connect]
 type: git_repo
-path: ~/KlipperConnect
-origin: <this repo>
+path: ~/klipper-connect
+origin: https://github.com/amd989/klipper-connect.git
 primary_branch: main
 virtualenv: ~/klipper-connect-env
 requirements: requirements.txt
@@ -136,7 +141,7 @@ managed_services: klipper-connect
 
 Set `type: MINI` in `[printer]`; [examples/klipper_connect.mini.conf](examples/klipper_connect.mini.conf)
 is a starting point (MINI fan names, `EXTRUDER=` for the filament macros).
-KlipperConnect then reports printer type 2.1.0, the same as the MINI's own
+klipper-connect then reports printer type 2.1.0, the same as the MINI's own
 Buddy firmware. Connect has only seen MINIs running that firmware, so some
 MINI-only features may not work; the log shows any command that fails.
 Turn off binary G-code in PrusaSlicer's MINI profile.
@@ -156,7 +161,7 @@ Turn off binary G-code in PrusaSlicer's MINI profile.
   sent to Connect up front, so the file list can show thumbnails
   (`file_info_count` in `[bridge]`).
 - **State mapping:** Klipper keeps "complete" or "cancelled" until the next
-  print. KlipperConnect shows FINISHED/STOPPED for 11 seconds (as PrusaLink
+  print. klipper-connect shows FINISHED/STOPPED for 11 seconds (as PrusaLink
   does), then IDLE.
 - **Serial number:** Connect identifies the printer by its serial number
   (and a hash of it). Use the real one from the sticker. If the printer
@@ -179,3 +184,9 @@ out; to run them with the real watcher:
 docker run --rm -v "$PWD":/src -w /src python:3.11-slim \
     sh -c "pip install -q -e '.[dev]' && pytest -q"
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). The Prusa Connect SDK is not part of this
+repository: it's installed from PyPI as a dependency and published by Prusa
+Research under its own terms.

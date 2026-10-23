@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install KlipperConnect on the Klipper host (Raspberry Pi etc.).
+# Install klipper-connect on the Klipper host (Raspberry Pi etc.).
 # Run as the user that runs Klipper/Moonraker. Safe to run again to update.
 set -euo pipefail
 
@@ -14,7 +14,7 @@ Usage: $0 [options]
   -n NAME  name for this bridge's service (default: klipper-connect)
            Use one per printer on hosts with several Klipper instances,
            e.g. -d ~/mini_data -m moonraker-mini -n klipper-connect-mini
-  -M       don't add KlipperConnect to Moonraker's update manager
+  -M       don't add klipper-connect to Moonraker's update manager
   -h       show this help
 EOF
 }
@@ -94,7 +94,7 @@ if [ "$UPDATE_MANAGER" = 1 ]; then
         branch="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)"
         cat >> "$MOONRAKER_CONF" <<EOF
 
-# KlipperConnect - Prusa Connect bridge (added by its install script)
+# klipper-connect - Prusa Connect bridge (added by its install script)
 $section
 type: git_repo
 path: $REPO_DIR
@@ -120,7 +120,7 @@ if [ "$restart_moonraker" = 1 ]; then
         echo "==> Restarting $MOONRAKER_SERVICE"
         sudo systemctl restart "$MOONRAKER_SERVICE"
     else
-        echo "==> Restart Moonraker to see KlipperConnect in the update panel"
+        echo "==> Restart Moonraker to see klipper-connect in the update panel"
     fi
 fi
 
@@ -128,7 +128,7 @@ if [ -f "$DATA_DIR/klipper_connect/prusa_connect.ini" ]; then
     echo "==> Restarting $SERVICE_NAME"
     sudo systemctl restart "$SERVICE_NAME"
     echo
-    echo "Done. KlipperConnect is running."
+    echo "Done. klipper-connect is running."
 else
     cat <<EOF
 

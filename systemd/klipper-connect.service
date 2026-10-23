@@ -1,5 +1,5 @@
 [Unit]
-Description=KlipperConnect (%NAME%) - Prusa Connect bridge for Klipper
+Description=klipper-connect (%NAME%) - Prusa Connect bridge for Klipper
 After=network-online.target %MOONRAKER%.service
 Wants=network-online.target
 
