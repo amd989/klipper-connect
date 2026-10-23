@@ -107,6 +107,11 @@ Then:
    journalctl -u klipper-connect -f
    ```
 
+### With KIAUH
+
+[kiauh/](kiauh/) has a KIAUH extension that does the same from KIAUH's
+extensions menu, for every printer on the host. See [kiauh/README.md](kiauh/README.md).
+
 ### Camera (optional)
 
 Point `[camera] snapshot_url` at a URL that returns one JPEG. With crowsnest
