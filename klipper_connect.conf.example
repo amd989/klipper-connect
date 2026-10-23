@@ -7,7 +7,7 @@
 # The serial number on the sticker on the back of the printer (CZPX...).
 # Connect identifies the printer by it.
 serial_number: CZPX0000X000XC00000
-# MK3S, MK3, MK25 or MK25S
+# MK3S, MK3, MK25, MK25S or MINI (see examples/ for a MINI config)
 type: MK3S
 # Klipper object names for the fans (used for RPM / power telemetry)
 part_fan: fan
@@ -30,7 +30,9 @@ tls: True
 #state_file: <printer_data>/klipper_connect/state.json
 
 [moonraker]
-url: http://127.0.0.1:7125
+# Default: the port in the moonraker.conf next to this file (so each Klipper
+# instance on a multi-printer host finds its own Moonraker), else 7125
+#url: http://127.0.0.1:7125
 # Only needed if this host isn't a trusted client in moonraker.conf
 #api_key:
 

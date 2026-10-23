@@ -7,7 +7,7 @@ from queue import Empty
 
 import pytest
 from prusa.connect.printer.command import CommandFailed
-from prusa.connect.printer.const import Event, PrinterType, State
+from prusa.connect.printer.const import Event, PrinterType, Source, State
 from prusa.connect.printer.models import Event as EventModel
 from prusa.connect.printer.models import Telemetry
 
@@ -242,7 +242,27 @@ def test_klipper_down_is_error(bridge, moonraker):
     moonraker.klippy_state = "shutdown"
     assert bridge.poll() == State.ERROR
     moonraker.close()
+    assert bridge.poll() == State.BUSY  # Moonraker may just be restarting
+    bridge.tracker.unreachable_since -= 60
     assert bridge.poll() == State.ERROR
+
+
+def test_mini_skips_events_buddy_never_sends(tmp_path, moonraker):
+    b = make_mini(tmp_path, moonraker)
+    b.printer.fs.detach("usb")  # would send MEDIUM_EJECTED
+    b.printer.attach(str(tmp_path / "gcodes"), "usb")  # MEDIUM_INSERTED
+    b.printer.event_cb(Event.MESH_BED_DATA, Source.FIRMWARE, mbl=[0.1])
+    b.printer.event_cb(Event.STATE_CHANGED, Source.FIRMWARE)
+    kinds = [e.event for e in events(drain(b.printer))]
+    assert kinds == [Event.STATE_CHANGED]
+
+
+def test_mk3s_still_sends_medium_events(bridge, tmp_path):
+    drain(bridge.printer)
+    bridge.printer.fs.detach("local")
+    bridge.printer.attach(str(tmp_path / "gcodes"), "local")
+    kinds = [e.event for e in events(drain(bridge.printer))]
+    assert kinds == [Event.MEDIUM_EJECTED, Event.MEDIUM_INSERTED]
 
 
 def test_job_id_survives_restart_mid_print(tmp_path, moonraker):
@@ -573,3 +593,146 @@ def test_file_info_pushed_for_recent_files(bridge, moonraker, tmp_path):
     bridge.push_file_info()
     infos = events(drain(bridge.printer), Event.FILE_INFO)
     assert [e.data["path"] for e in infos] == ["/local/old.gcode"]
+
+
+def test_mini_reports_its_printer_type(tmp_path, moonraker):
+    cfg = make_config(tmp_path)
+    cfg.printer_type = config_mod.PRINTER_TYPES["MINI"]
+    cfg.hotend_fan = "heater_fan extruder_fan"
+    cfg.filament_temp_param = "EXTRUDER"
+    moonraker.status["heater_fan extruder_fan"] = {"speed": 1.0, "rpm": None}
+    b = Bridge(cfg, Moonraker(moonraker.url))
+    b.setup()
+    b.poll()
+    info = events(drain(b.printer), Event.INFO)[0].data
+    assert (info["type"], info["version"], info["subversion"]) == (2, 1, 0)
+    # Buddy-style: storage list, no PrusaLink version
+    assert "prusalink" not in info
+    storage = info["storages"][0]
+    assert storage["mountpoint"] == "/local"  # make_config's storage name
+    assert storage["type"] == "USB" and storage["read_only"] is False
+    assert storage["free_space"] > 0
+    assert info["tools"] == {"1": {"high_flow": False, "hardened": False,
+                                   "material": "---",
+                                   "nozzle_diameter": 0.4}}
+    b.refresh_extras(force=True)
+    assert b.printer.get_info()["tools"]["1"]["material"] == "PLA"
+    headers = b.printer.make_headers()
+    assert headers["User-Agent-Printer"] == "2.1.0"
+    # Connect reads the firmware version from this header for a MINI
+    assert headers["User-Agent-Version"] == "0.12.0-0"
+    assert b.telemetry()["target_fan_hotend"] == 255
+
+    run_command(b.printer, "LOAD_FILAMENT", {"nozzle_temperature": 215})
+    assert moonraker.posts("/printer/gcode/script")[-1][2] == {
+        "script": "LOAD_FILAMENT EXTRUDER=215"}
+
+
+def test_mini_registration_request(tmp_path, moonraker):
+    """register() sends printer_type 2.1.0 and the add-printer URL uses it."""
+    import json as json_mod
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from klipper_connect.bridge import make_printer
+
+    seen = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length") or 0)
+            seen["body"] = json_mod.loads(self.rfile.read(length))
+            seen["agent"] = self.headers["User-Agent-Printer"]
+            self.send_response(200)
+            self.send_header("Code", "ABC123")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        cfg = make_config(tmp_path)
+        cfg.printer_type = config_mod.PRINTER_TYPES["MINI"]
+        printer = make_printer(cfg)
+        printer.server = f"http://127.0.0.1:{server.server_address[1]}"
+        assert printer.register() == "ABC123"
+        assert seen["body"]["printer_type"] == "2.1.0"
+        assert seen["body"]["sn"] == SN
+        assert seen["agent"] == "2.1.0"
+        assert f"/add-printer/connect/{printer.type}/" == \
+            "/add-printer/connect/2.1.0/"
+    finally:
+        server.shutdown()
+
+
+def make_mini(tmp_path, moonraker):
+    cfg = make_config(tmp_path)
+    cfg.printer_type = config_mod.PRINTER_TYPES["MINI"]
+    cfg.storage_name = "usb"
+    gcodes = tmp_path / "gcodes"
+    (gcodes / "cube.gcode").write_text("; thumbnail begin 4x4 8\n"
+                                       "; aGVsbG8h\n; thumbnail end\nG28\n")
+    (gcodes / "parts").mkdir()
+    (gcodes / "parts" / "gear.gcode").write_text("G28\n")
+    (gcodes / "notes.txt").write_text("x")
+    (gcodes / ".hidden.gcode").write_text("x")
+    b = Bridge(cfg, Moonraker(moonraker.url))
+    b.setup()
+    drain(b.printer)
+    return b
+
+
+def test_mini_lists_folders_on_file_info(tmp_path, moonraker):
+    b = make_mini(tmp_path, moonraker)
+    evts = run_command(b.printer, "SEND_FILE_INFO", {"path": "/usb"})
+    info = evts[-1]
+    assert info.event == Event.FILE_INFO
+    assert info.data["type"] == "FOLDER" and info.data["path"] == "/usb"
+    kids = {c["name"]: c for c in info.data["children"]}
+    assert set(kids) == {"cube.gcode", "parts", "notes.txt"}
+    assert kids["cube.gcode"]["type"] == "PRINT_FILE"
+    assert kids["cube.gcode"]["size"] > 0
+    assert kids["parts"]["type"] == "FOLDER"
+    assert kids["notes.txt"]["type"] == "FILE"
+    assert info.data["file_count"] == 3
+
+    sub = run_command(b.printer, "SEND_FILE_INFO", {"path": "/usb/parts"})
+    assert [c["name"] for c in sub[-1].data["children"]] == ["gear.gcode"]
+
+    f = run_command(b.printer, "SEND_FILE_INFO",
+                    {"path": "/usb/cube.gcode"})[-1]
+    assert f.event == Event.FILE_INFO
+    assert f.data["type"] == "PRINT_FILE"
+    assert f.data["display_name"] == "cube.gcode"
+    assert f.data["preview"] == "aGVsbG8h"
+
+    missing = run_command(b.printer, "SEND_FILE_INFO", {"path": "/usb/x"})
+    assert missing[-1].event == Event.FAILED
+
+
+def test_mk3s_file_info_unchanged(bridge):
+    evts = run_command(bridge.printer, "SEND_FILE_INFO", {"path": "/local"})
+    assert evts[-1].event == Event.FAILED  # SDK behaviour for folders
+    f = run_command(bridge.printer, "SEND_FILE_INFO",
+                    {"path": "/local/cube.gcode"})[-1]
+    assert f.event == Event.FILE_INFO and "children" not in f.data
+
+
+def test_failed_connect_requests_are_logged(caplog):
+    import logging
+    from types import SimpleNamespace
+    from klipper_connect.bridge import _log_failed_requests
+    caplog.set_level(logging.WARNING, logger="klipper-connect")
+    req = SimpleNamespace(method="POST", path_url="/p/events?x=1")
+    _log_failed_requests(SimpleNamespace(status_code=503, request=req))
+    _log_failed_requests(SimpleNamespace(status_code=204, request=req))
+    assert caplog.text.count("Connect POST /p/events -> 503") == 1
+
+
+def test_firmware_known_while_klipper_is_halted(tmp_path, moonraker):
+    moonraker.klippy_state = "error"
+    b = make_mini(tmp_path, moonraker)
+    assert b.printer.firmware == "0.12.0-0"
+    assert b.printer.make_headers()["User-Agent-Version"] == "0.12.0-0"
+    assert b.poll() == State.ERROR

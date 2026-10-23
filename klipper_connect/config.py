@@ -3,18 +3,54 @@ import configparser
 import os
 import re
 from dataclasses import dataclass
+from typing import Optional
 
 from prusa.connect.printer.const import PrinterType
 
 # Prusa serial numbers look like CZPX1234X123XC12345 (same check PrusaLink uses)
 SN_REGEX = re.compile(r"^CZPX\d{4}X\d{3}X.\d{5}$")
 
+class ExtraPrinterType:
+    """A printer type the SDK's PrinterType enum doesn't list.
+
+    The SDK only knows the printers PrusaLink supports. Others (like the
+    MINI, which normally talks to Connect from its own Buddy firmware) are
+    described the same way: a (type, version, subversion) tuple that
+    Connect sees as "type.version.subversion".
+    """
+
+    def __init__(self, name: str, value: tuple, buddy: bool = False):
+        self.name = name
+        self.value = value
+        # Normally runs Prusa's Buddy firmware, which reports itself to
+        # Connect a bit differently from PrusaLink (see KlipperPrinter)
+        self.buddy = buddy
+
+    def __str__(self):
+        return ".".join(str(i) for i in self.value)
+
+    def __repr__(self):
+        return f"<ExtraPrinterType.{self.name}: {self.value}>"
+
+    def __eq__(self, other):
+        return getattr(other, "value", None) == self.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+
 PRINTER_TYPES = {
     "MK3": PrinterType.I3MK3,
     "MK3S": PrinterType.I3MK3S,
     "MK25": PrinterType.I3MK25,
     "MK25S": PrinterType.I3MK25S,
+    # Same numbers the MINI's Buddy firmware reports (PRINTER_TYPE 2)
+    "MINI": ExtraPrinterType("MINI", (2, 1, 0), buddy=True),
 }
+
+def is_buddy(printer_type) -> bool:
+    return bool(getattr(printer_type, "buddy", False))
+
 
 CAMERA_TRIGGERS = ("10", "30", "60", "layer", "5layers", "manual")
 
@@ -106,6 +142,25 @@ def default_data_dir(config_path: str) -> str:
     return _path("~/printer_data")
 
 
+def moonraker_url_from_conf(config_dir: str) -> Optional[str]:
+    """URL of the Moonraker whose moonraker.conf sits in `config_dir`.
+
+    With several Klipper instances on one host, each Moonraker listens on
+    its own port (7125, 7126, ...); its moonraker.conf says which.
+    """
+    conf = os.path.join(config_dir, "moonraker.conf")
+    if not os.path.exists(conf):
+        return None
+    ini = configparser.ConfigParser(strict=False, interpolation=None,
+                                    inline_comment_prefixes=("#", ";"))
+    try:
+        ini.read(conf)
+        port = ini.getint("server", "port", fallback=7125)
+    except (configparser.Error, ValueError):
+        return None
+    return f"http://127.0.0.1:{port}"
+
+
 def load(path: str) -> Config:
     path = _path(path)
     if not os.path.exists(path):
@@ -150,10 +205,14 @@ def load(path: str) -> Config:
     cfg.state_file = _path(get("connect", "state_file",
                                os.path.join(own_dir, "state.json")))
 
-    cfg.moonraker_url = get("moonraker", "url", cfg.moonraker_url).rstrip("/")
+    cfg.moonraker_url = (get("moonraker", "url")
+                         or moonraker_url_from_conf(os.path.dirname(path))
+                         or cfg.moonraker_url).rstrip("/")
     cfg.moonraker_api_key = get("moonraker", "api_key", "")
 
-    cfg.storage_name = get("storage", "name", cfg.storage_name)
+    # Buddy printers (MINI) store files on "usb"; Connect looks for that
+    default_storage = "usb" if is_buddy(cfg.printer_type) else "local"
+    cfg.storage_name = get("storage", "name", default_storage)
     if "/" in cfg.storage_name or not cfg.storage_name:
         raise ValueError("[storage] name must be non-empty and contain no '/'")
     cfg.gcodes_path = _path(get("storage", "gcodes_path",
@@ -176,6 +235,10 @@ def load(path: str) -> Config:
 
     if ini.has_option("bridge", "file_info_count"):
         cfg.file_info_count = ini.getint("bridge", "file_info_count")
+    elif is_buddy(cfg.printer_type):
+        # Connect browses a MINI's folders itself; pushing file details up
+        # front isn't how Buddy firmware works
+        cfg.file_info_count = 0
     if ini.has_option("bridge", "telemetry_interval"):
         cfg.telemetry_interval = ini.getfloat("bridge", "telemetry_interval")
     cfg.log_level = get("bridge", "log_level", cfg.log_level).upper()

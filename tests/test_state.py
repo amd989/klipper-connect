@@ -131,3 +131,17 @@ def test_expected_restart_is_busy_then_error():
     assert t.update("disconnected", "standby", "Idle", False) == State.BUSY
     clock.now += 31
     assert t.update("disconnected", "standby", "Idle", False) == State.ERROR
+
+
+def test_short_moonraker_outage_is_busy():
+    from klipper_connect.state import UNREACHABLE, UNREACHABLE_GRACE
+    clock = Clock()
+    t = StateTracker(clock)
+    assert t.update(UNREACHABLE, "standby", "Idle", False) == State.BUSY
+    clock.now += UNREACHABLE_GRACE + 1
+    assert t.update(UNREACHABLE, "standby", "Idle", False) == State.ERROR
+    assert t.update("ready", "standby", "Idle", False) == State.IDLE
+    # A new outage gets a fresh grace period
+    assert t.update(UNREACHABLE, "standby", "Idle", False) == State.BUSY
+    # Klipper itself in error is still ERROR straight away
+    assert t.update("shutdown", "standby", "Idle", False) == State.ERROR

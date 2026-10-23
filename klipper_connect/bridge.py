@@ -29,10 +29,10 @@ from prusa.connect.printer.util import make_fingerprint
 
 from . import __version__
 from .camera import TRIGGERS, WebcamBridge
-from .config import Config
+from .config import Config, is_buddy
 from .moonraker import Moonraker, MoonrakerError
-from .state import (ACTIVE_PRINT_STATES, StateTracker, build_telemetry,
-                    resample_mesh)
+from .state import (ACTIVE_PRINT_STATES, UNREACHABLE, StateTracker,
+                    build_telemetry, resample_mesh)
 
 # How often to refresh things that change slowly (spool, lifetime totals)
 EXTRAS_INTERVAL = 30.0
@@ -67,13 +67,123 @@ class KlipperPrinter(Printer):
     """
 
     nozzle_diameter: Optional[float] = None
+    material: Optional[str] = None
+    # Report like Buddy firmware (MINI) instead of PrusaLink
+    buddy: bool = False
+    # Events Buddy firmware never sends; Connect answers them with 503
+    BUDDY_SKIPPED_EVENTS = {Event.MEDIUM_INSERTED, Event.MEDIUM_EJECTED,
+                            Event.MESH_BED_DATA}
+
+    def event_cb(self, event, source, timestamp=None, command_id=None,
+                 **kwargs):
+        if self.buddy and event in self.BUDDY_SKIPPED_EVENTS:
+            log.debug("Not sending %s (MINI)", event.value)
+            return
+        super().event_cb(event, source, timestamp=timestamp,
+                         command_id=command_id, **kwargs)
 
     def get_info(self) -> Dict[str, Any]:
         info = super().get_info()
-        info["prusalink"] = self.software
-        info["prusa_link"] = self.software
         info["nozzle_diameter"] = self.nozzle_diameter
+        if self.buddy:
+            # Buddy firmware lists its storage this way; without it Connect
+            # says "No storage available"
+            info["storages"] = [self._storage_info(name, storage)
+                                for name, storage in
+                                self.fs.storage_dict.items()]
+            # Buddy reports its (single) tool like this
+            tool: Dict[str, Any] = {"high_flow": False, "hardened": False,
+                                    "material": self.material or "---"}
+            if self.nozzle_diameter is not None:
+                tool["nozzle_diameter"] = self.nozzle_diameter
+            info["tools"] = {"1": tool}
+        else:
+            info["prusalink"] = self.software
+            info["prusa_link"] = self.software
         return info
+
+    @staticmethod
+    def _storage_info(name: str, storage) -> Dict[str, Any]:
+        data = {
+            "mountpoint": f"/{name}",
+            "type": "USB",
+            "read_only": False,
+            "is_sfn": False,  # long file names are fine
+        }
+        free = storage.get_space_info().get("free_space")
+        if free is not None:
+            data["free_space"] = free
+        return data
+
+    def get_file_info(self, caller: Command) -> Dict[str, Any]:
+        """Buddy-style FILE_INFO: Connect browses a MINI's storage by asking
+        for folders (starting with /usb), and expects their children back.
+        The SDK only answers for files."""
+        if not self.buddy:
+            return super().get_file_info(caller)
+        path = (caller.kwargs or {}).get("path")
+        if not path:
+            raise ValueError("SEND_FILE_INFO requires kwargs")
+        node = self.fs.get(path)
+        if node is None:
+            raise ValueError(f"File does not exist: {path}")
+        os_path = self.fs.get_os_path(path)
+        common = {
+            "source": Source.CONNECT,
+            "event": Event.FILE_INFO,
+            "path": path.rstrip("/") or "/",
+            "display_name": os.path.basename(path.rstrip("/")),
+            "read_only": False,
+        }
+        if not node.is_dir:
+            info = super().get_file_info(caller)
+            info.update({k: v for k, v in common.items()
+                         if k not in info})
+            info["type"] = _file_type(os_path, False)
+            return info
+        children = []
+        try:
+            entries = sorted(os.scandir(os_path), key=lambda e: e.name)
+        except OSError as err:
+            raise ValueError(f"Can't list {path}: {err}") from err
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                stat = entry.stat()
+            except OSError:
+                continue
+            is_dir = entry.is_dir()
+            children.append({
+                "name": entry.name,
+                "display_name": entry.name,
+                "size": 0 if is_dir else stat.st_size,
+                "m_timestamp": int(stat.st_mtime),
+                "read_only": False,
+                "type": _file_type(entry.name, is_dir),
+            })
+        common.update(type="FOLDER", children=children,
+                      file_count=len(children))
+        try:
+            common["m_timestamp"] = int(os.stat(os_path).st_mtime)
+        except OSError:
+            pass
+        return common
+
+
+def _file_type(name: str, is_dir: bool) -> str:
+    if is_dir:
+        return "FOLDER"
+    if name.lower().endswith(GCODE_EXTENSIONS):
+        return "PRINT_FILE"
+    return "FILE"
+
+
+def _log_failed_requests(res, *args, **kwargs):
+    """Log which Connect request failed; the SDK only logs the body."""
+    if res.status_code >= 400:
+        log.warning("Connect %s %s -> %s", res.request.method,
+                    res.request.path_url.split("?")[0], res.status_code)
 
 
 def _short(value: Any, limit: int = 300) -> str:
@@ -84,7 +194,11 @@ def _short(value: Any, limit: int = 300) -> str:
 def make_printer(cfg: Config) -> KlipperPrinter:
     printer = KlipperPrinter(cfg.printer_type, cfg.serial_number,
                              make_fingerprint(cfg.serial_number))
-    printer.software = cfg.link_version
+    printer.buddy = is_buddy(cfg.printer_type)
+    # Buddy firmware has no separate PrusaLink version; Connect then reads
+    # the firmware version from the same header
+    printer.software = None if printer.buddy else cfg.link_version
+    printer.conn.hooks["response"].append(_log_failed_requests)
     return printer
 
 
@@ -236,7 +350,7 @@ class Bridge:
     def setup(self):
         p = self.printer
         p.connection_from_config(self.cfg.credentials_file)
-        p.software = self.cfg.link_version
+        p.firmware = self.cfg.firmware_version or self._klipper_firmware()
         p.network_info.update(network_info())
         os.makedirs(self.cfg.gcodes_path, exist_ok=True)
         p.attach(self.cfg.gcodes_path, self.cfg.storage_name)
@@ -248,6 +362,16 @@ class Bridge:
                                            self.cfg.camera_file)
             except Exception:  # pylint: disable=broad-except
                 log.exception("Camera setup failed; running without it")
+
+    def _klipper_firmware(self) -> Optional[str]:
+        """Klipper's version, Prusa-style. Moonraker reports it even while
+        Klipper is halted, so the version header is right from the start."""
+        try:
+            return firmware_version(
+                self.mr.printer_info().get("software_version"))
+        except MoonrakerError as err:
+            log.warning("Could not read Klipper's version yet: %s", err)
+            return None
 
     def send_info(self) -> bool:
         """Send the full printer info (firmware, versions, nozzle, files).
@@ -288,7 +412,7 @@ class Bridge:
             if not self._moonraker_down:
                 log.warning("%s", err)
             self._moonraker_down = True
-            klippy_state, status = "disconnected", {}
+            klippy_state, status = UNREACHABLE, {}
 
         if klippy_state == "ready" and not self.info_sent:
             self.info_sent = self.send_info()
@@ -400,6 +524,7 @@ class Bridge:
             log.info("Loaded material: %s", extras.get("material"))
         with self.lock:
             self.extras = extras
+        self.printer.material = extras.get("material")
 
     def send_file_info(self, connect_path: str) -> bool:
         """Push a file's details (metadata + thumbnail) to Connect."""

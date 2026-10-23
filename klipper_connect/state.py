@@ -14,6 +14,10 @@ PRINT_END_HOLD = 11.0
 
 # How long a Klipper restart we asked for may take before it counts as ERROR
 RESTART_GRACE = 60.0
+# How long Moonraker may be unreachable (e.g. restarting) before it's ERROR
+UNREACHABLE_GRACE = 30.0
+# klippy_state the bridge uses when it can't reach Moonraker at all
+UNREACHABLE = "unreachable"
 
 ACTIVE_PRINT_STATES = {"printing", "paused"}
 END_PRINT_STATES = {
@@ -36,6 +40,7 @@ class StateTracker:
         self.last_print_state: Optional[str] = None
         self.ended_at: Optional[float] = None
         self.restart_until: Optional[float] = None
+        self.unreachable_since: Optional[float] = None
 
     def expect_restart(self, seconds: float = RESTART_GRACE):
         """Klipper is about to restart: report BUSY, not ERROR, meanwhile."""
@@ -50,6 +55,14 @@ class StateTracker:
             self.ended_at = self.clock()
         elif print_state in ACTIVE_PRINT_STATES:
             self.ended_at = None
+
+        if klippy_state == UNREACHABLE:
+            if self.unreachable_since is None:
+                self.unreachable_since = self.clock()
+            if self.clock() - self.unreachable_since < UNREACHABLE_GRACE:
+                return State.BUSY
+        else:
+            self.unreachable_since = None
 
         if klippy_state == "ready":
             self.restart_until = None

@@ -61,9 +61,21 @@ Options for other folder layouts (multiple printers, custom paths):
 | `-c DIR` | Klipper config folder | `<printer_data>/config` |
 | `-e DIR` | Python environment | `~/klipper-connect-env` |
 | `-m NAME` | Moonraker's systemd service | `moonraker` |
+| `-n NAME` | this bridge's systemd service | `klipper-connect` |
 | `-M` | don't touch `moonraker.conf` | |
 
-For example: `./scripts/install.sh -d ~/printer_2_data -m moonraker-2`.
+**Several printers on one host** (e.g. installed with KIAUH): run the
+installer once per printer, each with its own data folder, Moonraker service
+and bridge name:
+
+```bash
+./scripts/install.sh -d ~/mini_data -m moonraker-mini -n klipper-connect-mini
+./scripts/install.sh -d ~/ender3s1_data -m moonraker-ender3s1 -n klipper-connect-ender
+```
+
+Each bridge talks to its own Moonraker: the port is read from the
+`moonraker.conf` next to its `klipper_connect.conf` (or set `[moonraker] url`).
+The Python environment and the repo are shared.
 
 Then:
 
@@ -77,7 +89,7 @@ Then:
    confirm. The token goes to
    `<printer_data>/klipper_connect/prusa_connect.ini`, which is outside the
    config folder so it doesn't end up in config backups.
-3. Start it:
+3. Start it (use the `-n` name if you gave one):
    ```bash
    sudo systemctl start klipper-connect
    journalctl -u klipper-connect -f
@@ -119,6 +131,15 @@ virtualenv: ~/klipper-connect-env
 requirements: requirements.txt
 managed_services: klipper-connect
 ```
+
+### Prusa MINI (experimental)
+
+Set `type: MINI` in `[printer]`; [examples/klipper_connect.mini.conf](examples/klipper_connect.mini.conf)
+is a starting point (MINI fan names, `EXTRUDER=` for the filament macros).
+KlipperConnect then reports printer type 2.1.0, the same as the MINI's own
+Buddy firmware. Connect has only seen MINIs running that firmware, so some
+MINI-only features may not work; the log shows any command that fails.
+Turn off binary G-code in PrusaSlicer's MINI profile.
 
 ## Notes
 

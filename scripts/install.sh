@@ -11,6 +11,9 @@ Usage: $0 [options]
   -c DIR   Klipper config folder        (default: <printer_data>/config)
   -e DIR   Python virtualenv location   (default: ~/klipper-connect-env)
   -m NAME  Moonraker's systemd service  (default: moonraker)
+  -n NAME  name for this bridge's service (default: klipper-connect)
+           Use one per printer on hosts with several Klipper instances,
+           e.g. -d ~/mini_data -m moonraker-mini -n klipper-connect-mini
   -M       don't add KlipperConnect to Moonraker's update manager
   -h       show this help
 EOF
@@ -24,12 +27,13 @@ MOONRAKER_SERVICE="moonraker"
 UPDATE_MANAGER=1
 SERVICE_NAME="klipper-connect"
 
-while getopts "d:c:e:m:Mh" opt; do
+while getopts "d:c:e:m:n:Mh" opt; do
     case "$opt" in
         d) DATA_DIR="${OPTARG%/}" ;;
         c) CONFIG_DIR="${OPTARG%/}" ;;
         e) ENV_DIR="${OPTARG%/}" ;;
         m) MOONRAKER_SERVICE="$OPTARG" ;;
+        n) SERVICE_NAME="$OPTARG" ;;
         M) UPDATE_MANAGER=0 ;;
         h) usage; exit 0 ;;
         *) usage; exit 2 ;;
@@ -65,6 +69,7 @@ fi
 echo "==> systemd service $SERVICE_NAME"
 sed -e "s|%USER%|$USER|g" -e "s|%HOME%|$HOME|g" \
     -e "s|%ENV%|$ENV_DIR|g" -e "s|%CONFIG%|$CONFIG|g" \
+    -e "s|%NAME%|$SERVICE_NAME|g" -e "s|%MOONRAKER%|$MOONRAKER_SERVICE|g" \
     "$REPO_DIR/systemd/klipper-connect.service" |
     sudo tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null
 sudo systemctl daemon-reload
@@ -103,6 +108,11 @@ EOF
         restart_moonraker=1
     fi
 fi
+
+# Tell the user which Moonraker the bridge will talk to
+port="$(sed -n '/^\[server\]/,/^\[/{s/^port:[[:space:]]*\([0-9]*\).*/\1/p}' \
+    "$MOONRAKER_CONF" 2>/dev/null | head -n1)"
+echo "==> Bridge will use Moonraker on port ${port:-7125} (from $MOONRAKER_CONF)"
 
 if [ "$restart_moonraker" = 1 ]; then
     if systemctl list-unit-files "$MOONRAKER_SERVICE.service" >/dev/null 2>&1
