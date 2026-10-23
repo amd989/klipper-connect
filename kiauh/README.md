@@ -14,6 +14,9 @@ cp -r ~/klipper-connect/kiauh/klipper_connect ~/kiauh/kiauh/extensions/
 **Extensions → klipper-connect**. The copied folder survives KIAUH's
 self-updates because git leaves untracked files alone.
 
+Works with KIAUH v6.0.0 and newer (tested with 6.0.0, 6.1.0, 6.2.1 and
+the latest code).
+
 ## What it does
 
 **Install**

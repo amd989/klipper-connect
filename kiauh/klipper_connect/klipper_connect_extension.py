@@ -7,6 +7,7 @@
 #  This file may be distributed under the terms of the GNU GPLv3 license  #
 # ======================================================================= #
 
+import getpass
 import re
 import shutil
 import subprocess
@@ -46,7 +47,6 @@ from utils.sys_utils import (
     cmd_sysctl_service,
     create_python_venv,
     create_service_file,
-    get_current_user,
     install_python_packages,
     remove_system_service,
 )
@@ -240,9 +240,11 @@ class KlipperConnectExtension(BaseExtension):
             )
 
     def _install_python_env(self) -> None:
-        # Returns False when the env already exists; packages are refreshed
-        # either way so a re-install picks up new dependencies.
-        create_python_venv(KLIPPER_CONNECT_ENV_DIR, interactive=False)
+        # Only create the env when missing: older KIAUH versions ask whether
+        # to re-create an existing one. Packages are refreshed either way so
+        # a re-install picks up new dependencies.
+        if not KLIPPER_CONNECT_ENV_DIR.exists():
+            create_python_venv(KLIPPER_CONNECT_ENV_DIR)
         install_python_packages(
             KLIPPER_CONNECT_ENV_DIR, ["-e", KLIPPER_CONNECT_DIR.as_posix()]
         )
@@ -257,7 +259,7 @@ class KlipperConnectExtension(BaseExtension):
         content = (
             template.replace("%NAME%", name)
             .replace("%MOONRAKER%", moonraker.service_file_path.name)
-            .replace("%USER%", get_current_user())
+            .replace("%USER%", getpass.getuser())
             .replace("%HOME%", Path.home().as_posix())
             .replace("%ENV%", KLIPPER_CONNECT_ENV_DIR.as_posix())
             .replace("%CONFIG%", config_path(moonraker).as_posix())
