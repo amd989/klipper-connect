@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>klipper-connect: Prusa Connect for Klipper printers</title>
+<meta name="description" content="A bridge that runs next to Moonraker so Prusa Connect can monitor and control a printer running Klipper. Tested on an MK3S, experimental on the MINI.">
+<meta property="og:title" content="klipper-connect">
+<meta property="og:description" content="Use Prusa Connect with Klipper printers.">
+<meta property="og:image" content="img/connect-dashboard.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --graphite: #1c1d21;
+    --graphite-2: #26282d;
+    --paper: #f5f6f8;
+    --ink: #16181d;
+    --slate: #5f6672;
+    --line: #d9dce2;
+    --blue: #2547d0;
+    --blue-soft: #e6ebfb;
+    --on-dark: #e4e5e8;
+    --on-dark-muted: #9aa0aa;
+    --measure: 68ch;
+    --gutter: clamp(16px, 4vw, 48px);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+    font-variation-settings: "wdth" 100;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: var(--blue); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible {
+    outline: 3px solid var(--blue);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  p code { font-size: 0.86em; overflow-wrap: anywhere; }
+
+  /* ---------- hero: the two dashboards, split down the middle ---------- */
+  .hero {
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(90deg, var(--graphite) 50%, var(--paper) 50%);
+    padding: clamp(28px, 6vw, 64px) var(--gutter) clamp(48px, 8vw, 96px);
+    overflow: hidden;
+  }
+  .hero__sides {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    max-width: 1180px;
+    margin: 0 auto;
+    font-size: 15px;
+  }
+  .hero__sides span:first-child { color: var(--on-dark-muted); }
+  .hero__sides span:last-child { color: var(--slate); padding-left: clamp(12px, 3vw, 32px); }
+  .hero__inner { max-width: 1180px; margin: 0 auto; }
+  .hero h1 {
+    margin: clamp(40px, 9vw, 104px) 0 0;
+    font-size: clamp(42px, 8.4vw, 112px);
+    line-height: 0.95;
+    font-weight: 780;
+    font-variation-settings: "wdth" 125;
+    letter-spacing: -0.01em;
+    color: #fff;
+    mix-blend-mode: difference;  /* light on the Klipper side, dark on the Connect side */
+    max-width: 11.5em;
+  }
+
+  /* the bridge line, centred on the seam:
+     Klipper ── Moonraker ──HTTP── [klipper-connect] ──HTTPS── Prusa Connect */
+  .bridge {
+    margin-top: clamp(36px, 6vw, 64px);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    font-size: 15px;
+  }
+  .bridge__side { display: flex; align-items: center; min-width: 0; }
+  .bridge__side--left { color: var(--on-dark); }
+  .bridge__side--right { color: var(--ink); }
+  .node { white-space: nowrap; }
+  .wire { position: relative; flex: 1; height: 2px; margin: 0 12px; background: #4a4d55; }
+  .wire--blue { background: var(--blue); }
+  .bridge__side--left .wire--blue { margin-right: 0; }
+  .bridge__side--right .wire--blue { margin-left: 0; }
+  .wire b {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    font-size: 12px;
+    font-weight: 500;
+    font-style: normal;
+  }
+  .bridge__side--left .wire b { color: var(--on-dark-muted); }
+  .bridge__side--right .wire b { color: var(--slate); }
+  .pill {
+    background: var(--blue);
+    color: #fff;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .hero__lede {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-top: clamp(32px, 5vw, 56px);
+  }
+  .hero__lede p {
+    grid-column: 2;
+    margin: 0;
+    padding-left: clamp(12px, 3vw, 32px);
+    max-width: 34em;
+    color: var(--ink);
+    font-size: clamp(17px, 1.6vw, 19px);
+  }
+  .hero__actions {
+    grid-column: 2;
+    padding-left: clamp(12px, 3vw, 32px);
+    margin-top: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .btn {
+    display: inline-block;
+    padding: 11px 18px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    border: 2px solid var(--blue);
+  }
+  .btn--solid { background: var(--blue); color: #fff; }
+  .btn--plain { color: var(--blue); background: transparent; }
+
+  /* ---------- page sections ---------- */
+  main { padding: 0 var(--gutter); }
+  section { max-width: 1180px; margin: 0 auto; padding: clamp(56px, 8vw, 104px) 0 0; }
+  h2 {
+    font-size: clamp(28px, 3.6vw, 44px);
+    line-height: 1.05;
+    font-weight: 760;
+    font-variation-settings: "wdth" 118;
+    margin: 0 0 14px;
+  }
+  .section-lede { max-width: var(--measure); color: var(--slate); margin: 0; }
+
+  /* the proof: same moment, both dashboards */
+  .pair { margin-top: clamp(32px, 4vw, 48px); }
+  .pair h3 {
+    font-size: 21px;
+    font-weight: 680;
+    font-variation-settings: "wdth" 108;
+    margin: 0 0 6px;
+  }
+  .pair > p { margin: 0 0 18px; max-width: var(--measure); color: var(--slate); }
+  .pair__shots {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 14px;
+  }
+  .shot { margin: 0; }
+  .shot a { display: block; border-radius: 6px; overflow: hidden; }
+  .shot--klipper a { background: var(--graphite); border: 1px solid #000; }
+  .shot--connect a { background: #fff; border: 1px solid var(--line); }
+  .shot figcaption { font-size: 14px; color: var(--slate); margin-top: 8px; }
+  .shot figcaption strong { color: var(--ink); font-weight: 600; }
+
+  .matches {
+    margin: 18px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  .matches li {
+    background: var(--blue-soft);
+    color: #1b2f8a;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 14px;
+  }
+
+  /* features */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px clamp(24px, 4vw, 56px);
+    margin-top: 32px;
+  }
+  .features div { border-top: 2px solid var(--ink); padding-top: 14px; }
+  .features h3 {
+    margin: 0 0 6px;
+    font-size: 19px;
+    font-weight: 680;
+    font-variation-settings: "wdth" 108;
+  }
+  .features ul { margin: 0 0 24px; padding-left: 1.1em; }
+  .features li { margin: 4px 0; }
+  .not-yet { margin-top: 8px; color: var(--slate); max-width: var(--measure); }
+
+  /* install */
+  .steps { list-style: none; counter-reset: step; margin: 32px 0 0; padding: 0; max-width: 860px; }
+  .steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 28px 56px;
+  }
+  .steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: -2px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid var(--blue);
+    color: var(--blue);
+    font-weight: 700;
+    display: grid;
+    place-items: center;
+  }
+  .steps h3 { margin: 0 0 6px; font-size: 19px; font-weight: 680; }
+  .steps p { margin: 0 0 10px; max-width: var(--measure); }
+  .cmd {
+    position: relative;
+    background: var(--graphite);
+    color: var(--on-dark);
+    border-radius: 6px;
+    padding: 14px 92px 14px 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 0;
+  }
+  .cmd code { white-space: pre; }
+  .copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font: inherit;
+    font-family: "Archivo", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--on-dark);
+    background: var(--graphite-2);
+    border: 1px solid #4a4d55;
+    border-radius: 5px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .copy:hover { border-color: var(--on-dark-muted); }
+  .alt { color: var(--slate); font-size: 15px; }
+
+  footer {
+    max-width: 1180px;
+    margin: clamp(64px, 9vw, 112px) auto 0;
+    padding: 24px var(--gutter) 40px;
+    border-top: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 14px;
+  }
+  footer p { margin: 0 0 8px; max-width: var(--measure); }
+
+  /* ---------- small screens ---------- */
+  @media (max-width: 760px) {
+    .pair__shots, .features { grid-template-columns: 1fr; }
+    .hero__lede, .hero__lede p, .hero__actions { display: block; padding-left: 0; }
+    .hero__lede { background: var(--paper); margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter)); padding: 24px var(--gutter) 8px; }
+    .hero { padding-bottom: 0; }
+    .steps > li { padding-left: 48px; }
+    .bridge { grid-template-columns: 1fr; justify-items: start; gap: 6px; }
+    .bridge__side { flex-direction: column; align-items: flex-start; }
+    .bridge__side--right { color: var(--on-dark); }
+    .bridge__side--right .wire b { color: var(--on-dark-muted); }
+    .wire { flex: none; width: 2px; height: 22px; margin: 6px 0 6px 14px !important; }
+    .wire b { left: 12px; bottom: auto; top: 50%; transform: translateY(-50%); }
+    .hero { background: var(--graphite); }
+    .hero__sides { display: none; }
+    .hero h1 { mix-blend-mode: normal; color: var(--on-dark); }
+    .cmd { padding-right: 16px; padding-top: 44px; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .hero h1 { animation: seam 900ms cubic-bezier(.2,.7,.2,1) both; }
+    @keyframes seam {
+      from { clip-path: inset(0 50% 0 50%); }
+      to { clip-path: inset(0 0 0 0); }
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero__sides" aria-hidden="true">
+    <span>Klipper</span>
+    <span>Prusa Connect</span>
+  </div>
+  <div class="hero__inner">
+    <h1>Your Klipper printer, in Prusa Connect.</h1>
+
+    <div class="bridge" role="img" aria-label="Klipper talks to Moonraker. klipper-connect talks to Moonraker over HTTP and to Prusa Connect over HTTPS.">
+      <div class="bridge__side bridge__side--left">
+        <span class="node">Klipper</span>
+        <i class="wire"></i>
+        <span class="node">Moonraker</span>
+        <i class="wire wire--blue"><b>HTTP</b></i>
+      </div>
+      <span class="pill">klipper-connect</span>
+      <div class="bridge__side bridge__side--right">
+        <i class="wire wire--blue"><b>HTTPS</b></i>
+        <span class="node">Prusa Connect</span>
+      </div>
+    </div>
+
+    <div class="hero__lede">
+      <p>klipper-connect runs next to Moonraker and speaks to Prusa Connect the
+      same way PrusaLink does, so a printer running Klipper shows up in Connect
+      like any other Original Prusa. Tested on an MK3S, experimental on the MINI.</p>
+      <div class="hero__actions">
+        <a class="btn btn--solid" href="https://github.com/amd989/klipper-connect">Get it on GitHub</a>
+        <a class="btn btn--plain" href="#install">Install</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="proof" aria-labelledby="proof-title">
+    <h2 id="proof-title">The same print, from both sides</h2>
+    <p class="section-lede">These are the same moment on one MK3S running
+    Klipper: Mainsail on the Raspberry Pi on the left, Prusa Connect in the
+    browser on the right. Click a screenshot for the full-size image.</p>
+
+    <article class="pair">
+      <h3>A calibration cube, live</h3>
+      <p>Temperatures, progress, time left and the loaded spool come from
+      Klipper and Moonraker. Pause, stop and set temperatures from Connect,
+      and Klipper does it.</p>
+      <div class="pair__shots">
+        <figure class="shot shot--klipper">
+          <a href="img/mainsail-dashboard.webp"><img src="img/mainsail-dashboard.webp" width="2000" height="886" loading="lazy" alt="Mainsail dashboard: xyzCalibration cube printing at 25%, extruder 219.8 °C of 220, heater bed 60 °C, Spoolman spool Matte PLA Blue."></a>
+          <figcaption><strong>Mainsail</strong>, on the printer's Raspberry Pi</figcaption>
+        </figure>
+        <figure class="shot shot--connect">
+          <a href="img/connect-dashboard.webp"><img src="img/connect-dashboard.webp" width="2000" height="876" loading="lazy" alt="Prusa Connect dashboard for the MK3S+: printing, nozzle 219 to 220 °C, bed 60 °C, the same calibration cube at 33% with remaining time and estimated end."></a>
+          <figcaption><strong>Prusa Connect</strong>, through klipper-connect</figcaption>
+        </figure>
+      </div>
+      <ul class="matches" aria-label="Seen in both">
+        <li>Nozzle 220 °C</li>
+        <li>Bed 60 °C</li>
+        <li>Same file and progress</li>
+        <li>Pause and stop</li>
+        <li>PLA from Spoolman</li>
+      </ul>
+    </article>
+
+    <article class="pair">
+      <h3>Your gcodes folder, with thumbnails</h3>
+      <p>Files in Klipper's gcodes folder appear in Connect's file list with the
+      slicer's thumbnails, and you can start them from either side. Files you
+      send from Connect land in the same folder.</p>
+      <div class="pair__shots">
+        <figure class="shot shot--klipper">
+          <a href="img/mainsail-files.webp"><img src="img/mainsail-files.webp" width="2000" height="514" loading="lazy" alt="Mainsail G-code files list: two xyzCalibration cubes and a chess set, with thumbnails, sizes and print times."></a>
+          <figcaption><strong>Mainsail</strong> file list</figcaption>
+        </figure>
+        <figure class="shot shot--connect">
+          <a href="img/connect-files.webp"><img src="img/connect-files.webp" width="2000" height="814" loading="lazy" alt="Prusa Connect printer files: the same three files with thumbnails, printer model, material and size, the first one printing at 59%."></a>
+          <figcaption><strong>Prusa Connect</strong> printer files</figcaption>
+        </figure>
+      </div>
+    </article>
+  </section>
+
+  <section id="features" aria-labelledby="features-title">
+    <h2 id="features-title">What works</h2>
+    <div class="features">
+      <div>
+        <h3>Watch</h3>
+        <ul>
+          <li>Printer state, temperatures, fans, speed and flow</li>
+          <li>Progress, time printing and time left</li>
+          <li>Print history and statistics in Connect</li>
+          <li>Webcam snapshots from crowsnest</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Control</h3>
+        <ul>
+          <li>Start, pause, resume and stop prints</li>
+          <li>Set temperatures, home, move and level the bed</li>
+          <li>Load and unload filament with your macros</li>
+          <li>Send G-code and restart the firmware</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Files</h3>
+        <ul>
+          <li>Browse the gcodes folder, with thumbnails</li>
+          <li>Upload from Connect, and print after upload</li>
+          <li>Delete files and create folders</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Klipper extras</h3>
+        <ul>
+          <li>Loaded material from Spoolman</li>
+          <li>Bed mesh after leveling</li>
+          <li>Several printers on one host, one bridge each</li>
+          <li>Updates from Mainsail or Fluidd's update panel</li>
+        </ul>
+      </div>
+    </div>
+    <p class="not-yet">Not supported yet: binary G-code (.bgcode, so turn it
+    off in PrusaSlicer) and Connect's on-printer dialogs.</p>
+  </section>
+
+  <section id="install" aria-labelledby="install-title">
+    <h2 id="install-title">Install</h2>
+    <p class="section-lede">On the Raspberry Pi (or other host) that runs
+    Klipper and Moonraker.</p>
+    <ol class="steps">
+      <li>
+        <h3>Clone and run the installer</h3>
+        <p>It sets up the service and adds klipper-connect to Moonraker's
+        update manager.</p>
+        <pre class="cmd"><code>git clone https://github.com/amd989/klipper-connect.git ~/klipper-connect
+cd ~/klipper-connect &amp;&amp; ./scripts/install.sh</code><button class="copy" type="button">Copy</button></pre>
+        <p class="alt">Using KIAUH? Copy <code>kiauh/klipper_connect</code> into
+        KIAUH's extensions folder and install it from the Extensions menu.
+        Several printers on one host? See the
+        <a href="https://github.com/amd989/klipper-connect#install-on-the-klipper-host">install options</a>.</p>
+      </li>
+      <li>
+        <h3>Add your serial number</h3>
+        <p>Set <code>serial_number</code> in
+        <code>~/printer_data/config/klipper_connect.conf</code> to the CZPX
+        number on the sticker on the back of your printer.</p>
+      </li>
+      <li>
+        <h3>Link it to Prusa Connect</h3>
+        <p>Open the link it prints, confirm, then start the service.</p>
+        <pre class="cmd"><code>~/klipper-connect-env/bin/klipper-connect register
+sudo systemctl start klipper-connect</code><button class="copy" type="button">Copy</button></pre>
+      </li>
+    </ol>
+  </section>
+</main>
+
+<footer>
+  <p>klipper-connect is an independent community project. It isn't affiliated
+  with, endorsed by or supported by Prusa Research. "Prusa" and "Prusa
+  Connect" are used only to describe what it works with.</p>
+  <p>MIT licensed. <a href="https://github.com/amd989/klipper-connect">Source,
+  issues and docs on GitHub</a>.</p>
+</footer>
+
+<script>
+  document.querySelectorAll(".copy").forEach(function (button) {
+    button.addEventListener("click", function () {
+      var text = button.parentElement.querySelector("code").innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        button.textContent = "Copied";
+        setTimeout(function () { button.textContent = "Copy"; }, 1600);
+      }, function () {
+        button.textContent = "Select and copy";
+      });
+    });
+  });
+</script>
+</body>
+</html>

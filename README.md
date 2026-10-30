@@ -3,6 +3,8 @@
 [![Tests](https://github.com/amd989/klipper-connect/actions/workflows/tests.yml/badge.svg)](https://github.com/amd989/klipper-connect/actions/workflows/tests.yml)
 
 Use [Prusa Connect](https://connect.prusa3d.com) with a Klipper printer.
+See it side by side with Mainsail on the
+[project page](https://amd989.github.io/klipper-connect/).
 klipper-connect runs as a small service next to Moonraker. It uses Prusa's
 own [Connect SDK](https://github.com/prusa3d/Prusa-Connect-SDK-Printer), the
 same library PrusaLink uses, so Connect sees a regular Original Prusa

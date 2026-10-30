@@ -9,3 +9,6 @@ dist/
 # Never commit Connect credentials
 prusa_connect.ini
 *.state.json
+
+# local Claude/preview settings
+.claude/
