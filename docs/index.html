@@ -244,28 +244,21 @@
     background: var(--blue);
     pointer-events: none;
   }
-  .compare__handle::after {
-    content: "";
+  .compare__knob {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 38px;
-    height: 38px;
+    width: 42px;
+    height: 42px;
     transform: translate(-50%, -50%);
+    display: grid;
+    place-items: center;
     border-radius: 50%;
     background: var(--blue);
     border: 3px solid #fff;
     box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
-    /* two small arrows: ‹ › */
-    background-image:
-      linear-gradient(135deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%),
-      linear-gradient(45deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%),
-      linear-gradient(-135deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%),
-      linear-gradient(-45deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%);
-    background-size: 8px 8px;
-    background-repeat: no-repeat;
-    background-position: 7px 10px, 7px 16px, 19px 10px, 19px 16px;
   }
+  .compare__knob svg { display: block; }
   /* the range input covers the stage: keyboard and screen readers use it */
   .compare__range {
     position: absolute;
@@ -276,7 +269,7 @@
     opacity: 0;
     pointer-events: none;  /* the stage handles mouse/touch; this is for keys */
   }
-  .compare__stage:has(.compare__range:focus-visible) .compare__handle::after {
+  .compare__stage:has(.compare__range:focus-visible) .compare__knob {
     outline: 3px solid var(--blue);
     outline-offset: 3px;
   }
@@ -381,7 +374,7 @@
     .compare__label { top: 6px; padding: 2px 8px; font-size: 11px; }
     .compare__label--left { left: 6px; }
     .compare__label--right { right: 6px; }
-    .compare__handle::after { transform: translate(-50%, -50%) scale(.75); }
+    .compare__knob { transform: translate(-50%, -50%) scale(.75); }
     .hero h1 { mix-blend-mode: normal; color: var(--on-dark); }
     .cmd { padding-right: 16px; padding-top: 44px; }
   }
@@ -449,7 +442,7 @@
           <img class="compare__img compare__img--top" src="img/connect-dashboard.webp" width="2000" height="876" alt="Prusa Connect dashboard for the MK3S+: printing, nozzle 219 to 220 °C, bed 60 °C, the same calibration cube at 33% with remaining time and estimated end.">
           <span class="compare__label compare__label--left" aria-hidden="true">Mainsail</span>
           <span class="compare__label compare__label--right" aria-hidden="true">Prusa Connect</span>
-          <span class="compare__handle" aria-hidden="true"></span>
+          <span class="compare__handle" aria-hidden="true"><span class="compare__knob"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 6 3 12l6 6M15 6l6 6-6 6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span>
           <input class="compare__range" type="range" min="0" max="100" value="50" step="1"
                  aria-label="Drag to compare Mainsail (left) with Prusa Connect (right)">
         </div>
