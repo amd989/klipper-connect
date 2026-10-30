@@ -197,6 +197,91 @@
     font-size: 14px;
   }
 
+  /* compare slider: Mainsail underneath, Prusa Connect on top, clipped at --pos */
+  .compare { margin: 0; }
+  .compare__stage {
+    position: relative;
+    aspect-ratio: 2000 / 886;
+    overflow: hidden;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--graphite);
+    cursor: ew-resize;
+    touch-action: pan-y;  /* vertical scrolling still works on phones */
+    user-select: none;
+  }
+  .compare__img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+    pointer-events: none;
+  }
+  .compare__img--top {
+    background: #fff;
+    clip-path: inset(0 0 0 var(--pos));
+  }
+  .compare__label {
+    position: absolute;
+    top: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: none;
+  }
+  .compare__label--left { left: 12px; background: var(--graphite); color: var(--on-dark); border: 1px solid #4a4d55; }
+  .compare__label--right { right: 12px; background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  .compare__handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--pos);
+    width: 3px;
+    margin-left: -1.5px;
+    background: var(--blue);
+    pointer-events: none;
+  }
+  .compare__handle::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 38px;
+    height: 38px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--blue);
+    border: 3px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+    /* two small arrows: ‹ › */
+    background-image:
+      linear-gradient(135deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%),
+      linear-gradient(45deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%),
+      linear-gradient(-135deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%),
+      linear-gradient(-45deg, transparent 45%, #fff 45%, #fff 58%, transparent 58%);
+    background-size: 8px 8px;
+    background-repeat: no-repeat;
+    background-position: 7px 10px, 7px 16px, 19px 10px, 19px 16px;
+  }
+  /* the range input covers the stage: keyboard and screen readers use it */
+  .compare__range {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;  /* the stage handles mouse/touch; this is for keys */
+  }
+  .compare__stage:has(.compare__range:focus-visible) .compare__handle::after {
+    outline: 3px solid var(--blue);
+    outline-offset: 3px;
+  }
+  .compare figcaption { font-size: 14px; color: var(--slate); margin-top: 8px; }
+
   /* features */
   .features {
     display: grid;
@@ -293,6 +378,10 @@
     .wire b { left: 12px; bottom: auto; top: 50%; transform: translateY(-50%); }
     .hero { background: var(--graphite); }
     .hero__sides { display: none; }
+    .compare__label { top: 6px; padding: 2px 8px; font-size: 11px; }
+    .compare__label--left { left: 6px; }
+    .compare__label--right { right: 6px; }
+    .compare__handle::after { transform: translate(-50%, -50%) scale(.75); }
     .hero h1 { mix-blend-mode: normal; color: var(--on-dark); }
     .cmd { padding-right: 16px; padding-top: 44px; }
   }
@@ -347,23 +436,27 @@
     <h2 id="proof-title">The same print, from both sides</h2>
     <p class="section-lede">These are the same moment on one MK3S running
     Klipper: Mainsail on the Raspberry Pi on the left, Prusa Connect in the
-    browser on the right. Click a screenshot for the full-size image.</p>
+    browser on the right.</p>
 
     <article class="pair">
       <h3>A calibration cube, live</h3>
       <p>Temperatures, progress, time left and the loaded spool come from
       Klipper and Moonraker. Pause, stop and set temperatures from Connect,
       and Klipper does it.</p>
-      <div class="pair__shots">
-        <figure class="shot shot--klipper">
-          <a href="img/mainsail-dashboard.webp"><img src="img/mainsail-dashboard.webp" width="2000" height="886" loading="lazy" alt="Mainsail dashboard: xyzCalibration cube printing at 25%, extruder 219.8 °C of 220, heater bed 60 °C, Spoolman spool Matte PLA Blue."></a>
-          <figcaption><strong>Mainsail</strong>, on the printer's Raspberry Pi</figcaption>
-        </figure>
-        <figure class="shot shot--connect">
-          <a href="img/connect-dashboard.webp"><img src="img/connect-dashboard.webp" width="2000" height="876" loading="lazy" alt="Prusa Connect dashboard for the MK3S+: printing, nozzle 219 to 220 °C, bed 60 °C, the same calibration cube at 33% with remaining time and estimated end."></a>
-          <figcaption><strong>Prusa Connect</strong>, through klipper-connect</figcaption>
-        </figure>
-      </div>
+      <figure class="compare" style="--pos: 50%">
+        <div class="compare__stage">
+          <img class="compare__img" src="img/mainsail-dashboard.webp" width="2000" height="886" alt="Mainsail dashboard: xyzCalibration cube printing at 25%, extruder 219.8 °C of 220, heater bed 60 °C, Spoolman spool Matte PLA Blue.">
+          <img class="compare__img compare__img--top" src="img/connect-dashboard.webp" width="2000" height="876" alt="Prusa Connect dashboard for the MK3S+: printing, nozzle 219 to 220 °C, bed 60 °C, the same calibration cube at 33% with remaining time and estimated end.">
+          <span class="compare__label compare__label--left" aria-hidden="true">Mainsail</span>
+          <span class="compare__label compare__label--right" aria-hidden="true">Prusa Connect</span>
+          <span class="compare__handle" aria-hidden="true"></span>
+          <input class="compare__range" type="range" min="0" max="100" value="50" step="1"
+                 aria-label="Drag to compare Mainsail (left) with Prusa Connect (right)">
+        </div>
+        <figcaption>Drag the handle to compare. Full size:
+          <a href="img/mainsail-dashboard.webp">Mainsail</a>,
+          <a href="img/connect-dashboard.webp">Prusa Connect</a>.</figcaption>
+      </figure>
       <ul class="matches" aria-label="Seen in both">
         <li>Nozzle 220 °C</li>
         <li>Bed 60 °C</li>
@@ -475,6 +568,32 @@ sudo systemctl start klipper-connect</code><button class="copy" type="button">Co
 </footer>
 
 <script>
+  // Compare slider: drag anywhere on the picture (mouse or touch),
+  // or focus it and use the arrow keys.
+  document.querySelectorAll(".compare").forEach(function (fig) {
+    var stage = fig.querySelector(".compare__stage");
+    var range = fig.querySelector(".compare__range");
+    function set(pct) {
+      pct = Math.max(0, Math.min(100, pct));
+      fig.style.setProperty("--pos", pct + "%");
+      range.value = Math.round(pct);
+    }
+    function fromPointer(e) {
+      var r = stage.getBoundingClientRect();
+      set((e.clientX - r.left) / r.width * 100);
+    }
+    var dragging = false;
+    stage.addEventListener("pointerdown", function (e) {
+      dragging = true;
+      stage.setPointerCapture(e.pointerId);
+      fromPointer(e);
+    });
+    stage.addEventListener("pointermove", function (e) { if (dragging) fromPointer(e); });
+    stage.addEventListener("pointerup", function () { dragging = false; });
+    stage.addEventListener("pointercancel", function () { dragging = false; });
+    range.addEventListener("input", function () { set(+range.value); });
+  });
+
   document.querySelectorAll(".copy").forEach(function (button) {
     button.addEventListener("click", function () {
       var text = button.parentElement.querySelector("code").innerText;
