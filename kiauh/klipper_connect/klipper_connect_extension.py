@@ -1,8 +1,12 @@
 # ======================================================================= #
 #  Copyright (C) 2020 - 2026 Dominik Willner <dev.dw-0@proton.me>         #
+#  Copyright (C) 2026 Alejandro Mora <github.com/amd989>                  #
 #                                                                         #
 #  This file is part of KIAUH - Klipper Installation And Update Helper    #
 #  https://github.com/dw-0/kiauh                                          #
+#                                                                         #
+#  It integrates klipper-connect (Prusa Connect bridge for Klipper):      #
+#  https://github.com/amd989/klipper-connect                              #
 #                                                                         #
 #  This file may be distributed under the terms of the GNU GPLv3 license  #
 # ======================================================================= #
