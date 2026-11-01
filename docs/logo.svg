@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>klipper-connect</title>
+  <!-- Klipper side (graphite) and Prusa Connect side (paper), joined by a
+       blue bridge whose endpoints take the opposite side's colour -->
+  <defs><clipPath id="disc"><circle cx="256" cy="256" r="236"/></clipPath></defs>
+  <g clip-path="url(#disc)">
+    <rect width="256" height="512" fill="#1C1D21"/>
+    <rect x="256" width="256" height="512" fill="#F5F6F8"/>
+  </g>
+  <circle cx="256" cy="256" r="236" fill="none" stroke="#2547D0" stroke-width="24"/>
+  <rect x="150" y="231" width="212" height="50" rx="25" fill="#2547D0"/>
+  <circle cx="148" cy="256" r="50" fill="#F5F6F8" stroke="#2547D0" stroke-width="22"/>
+  <circle cx="364" cy="256" r="50" fill="#1C1D21" stroke="#2547D0" stroke-width="22"/>
+</svg>
