@@ -1,11 +1,23 @@
-# klipper-connect
+<p align="center">
+  <img src="docs/logo.png" alt="klipper-connect logo" width="128" height="128">
+</p>
 
-[![Tests](https://github.com/amd989/klipper-connect/actions/workflows/tests.yml/badge.svg)](https://github.com/amd989/klipper-connect/actions/workflows/tests.yml)
+<h1 align="center">klipper-connect</h1>
 
-Use [Prusa Connect](https://connect.prusa3d.com) with a Klipper printer.
-See it side by side with Mainsail on the
-[project page](https://amd989.github.io/klipper-connect/).
-klipper-connect runs as a small service next to Moonraker. It uses Prusa's
+<p align="center">Use Prusa Connect with Klipper printers.</p>
+
+<p align="center">
+  <a href="https://github.com/amd989/klipper-connect/actions/workflows/tests.yml"><img src="https://github.com/amd989/klipper-connect/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/amd989/klipper-connect" alt="License: MIT"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.9%2B-2547D0?logo=python&logoColor=white" alt="Python 3.9+"></a>
+  <a href="https://github.com/amd989/klipper-connect/commits/main"><img src="https://img.shields.io/github/last-commit/amd989/klipper-connect" alt="Last commit"></a>
+  <a href="https://amd989.github.io/klipper-connect/"><img src="https://img.shields.io/badge/project%20page-see%20it%20working-2547D0" alt="Project page"></a>
+</p>
+
+klipper-connect runs as a small service next to Moonraker and connects your
+Klipper printer to [Prusa Connect](https://connect.prusa3d.com). See it side
+by side with Mainsail on the
+[project page](https://amd989.github.io/klipper-connect/). It uses Prusa's
 own [Connect SDK](https://github.com/prusa3d/Prusa-Connect-SDK-Printer), the
 same library PrusaLink uses, so Connect sees a regular Original Prusa
 printer (MK3S tested; MINI experimental).
