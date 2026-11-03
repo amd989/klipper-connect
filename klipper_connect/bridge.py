@@ -30,6 +30,9 @@ from prusa.connect.printer.util import make_fingerprint
 from . import __version__
 from .camera import TRIGGERS, WebcamBridge
 from .config import Config, is_buddy
+from .downloads import (START_ENCRYPTED_DOWNLOAD, START_INLINE_DOWNLOAD,
+                        DecryptingDownloadMgr, KlipperCommand,
+                        encrypted_url, parse_block)
 from .moonraker import Moonraker, MoonrakerError
 from .state import (ACTIVE_PRINT_STATES, UNREACHABLE, StateTracker,
                     build_telemetry, resample_mesh)
@@ -73,6 +76,42 @@ class KlipperPrinter(Printer):
     # Events Buddy firmware never sends; Connect answers them with 503
     BUDDY_SKIPPED_EVENTS = {Event.MEDIUM_INSERTED, Event.MEDIUM_EJECTED,
                             Event.MESH_BED_DATA}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Download commands Buddy firmware (MINI) gets from Connect but the
+        # SDK doesn't know; see downloads.py
+        self.download_mgr = DecryptingDownloadMgr.replacing(self.download_mgr)
+        self.command.__class__ = KlipperCommand
+        self.command.extra_handlers = {
+            START_INLINE_DOWNLOAD: self.start_inline_download,
+            START_ENCRYPTED_DOWNLOAD: self.start_encrypted_download,
+        }
+
+    def start_inline_download(self, caller: Command) -> Dict[str, Any]:
+        """Same arguments and file as START_CONNECT_DOWNLOAD."""
+        return self.start_connect_download(caller)
+
+    def start_encrypted_download(self, caller: Command) -> Dict[str, Any]:
+        kwargs = caller.kwargs or {}
+        try:
+            path = kwargs["path"]
+            key = parse_block(kwargs["key"], "key")
+            iv = parse_block(kwargs["iv"], "iv")
+            orig_size = int(kwargs["orig_size"])
+        except KeyError as err:
+            raise ValueError(f"{START_ENCRYPTED_DOWNLOAD} requires "
+                             f"kwarg {err}") from None
+        if not self.server:
+            raise RuntimeError("Printer.server must be set!")
+        url = encrypted_url(self.server, iv.hex(), kwargs.get("port"))
+        retval = self.download_mgr.start_encrypted(
+            path, url, (key, iv, orig_size),
+            to_print=kwargs.get("printing", False),
+            to_select=kwargs.get("selecting", False),
+            start_cmd_id=caller.command_id)
+        retval["source"] = Source.CONNECT
+        return retval
 
     def event_cb(self, event, source, timestamp=None, command_id=None,
                  **kwargs):
