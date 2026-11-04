@@ -20,7 +20,7 @@ by side with Mainsail on the
 [project page](https://amd989.github.io/klipper-connect/). It uses Prusa's
 own [Connect SDK](https://github.com/prusa3d/Prusa-Connect-SDK-Printer), the
 same library PrusaLink uses, so Connect sees a regular Original Prusa
-printer (MK3S tested; MINI experimental).
+printer. Tested on an MK3S and a MINI+ running Klipper.
 
 ```mermaid
 flowchart LR
@@ -40,25 +40,29 @@ flowchart LR
 
 ## What works
 
-| Connect | Klipper / Moonraker |
+| In Prusa Connect | Comes from / goes to |
 |---|---|
 | Printer state (idle, printing, paused, finished, stopped, busy, error) | `print_stats`, `idle_timeout`, Klippy state |
 | Temperatures, targets, position, fan RPM/power, speed, flow | `extruder`, `heater_bed`, `toolhead`, `gcode_move`, fans |
-| Progress, time printing, time remaining, material | `display_status`, `print_stats`, file metadata |
+| Progress, time printing, time remaining | `display_status`, `print_stats`, file metadata |
 | Start / pause / resume / stop | `printer/print/*` |
-| Send G-code | `printer/gcode/script` |
-| File list, upload from Connect, delete, create folder | the `gcodes` folder directly |
+| Set temperatures, move, home, send G-code | `printer/gcode/script` |
+| Start MBL | `G28` then `G80` (see [Notes](#notes)) |
+| File list with thumbnails, upload from Connect, delete, create folder | the `gcodes` folder |
 | "Print after upload" | starts the print once the download finishes |
 | Load / unload filament | `LOAD_FILAMENT` / `UNLOAD_FILAMENT` macros |
-| Reset printer | `FIRMWARE_RESTART` |
+| Loaded material | the active [Spoolman](#spoolman) spool |
+| Print history and statistics | jobs Connect sees, plus Moonraker's lifetime totals |
+| Bed mesh | Klipper's `bed_mesh`, sent after each leveling |
+| Reset printer | `FIRMWARE_RESTART` (shown as busy while Klipper restarts) |
 | Set printer ready | handled by the SDK |
 | Camera | snapshots from crowsnest (or any JPEG URL), see below |
 
-Also: loaded material from Spoolman, lifetime totals from Moonraker's
-history, and the bed mesh after leveling.
+Several printers on one host are supported, with one bridge per printer.
 
-Not done yet: binary G-code (`.bgcode`), dialogs (e.g. M600 prompts),
-Connect-triggered updates.
+Not supported: binary G-code (`.bgcode`), Connect's on-printer dialogs (e.g.
+M600 prompts), updates started from Connect, and Connect's spool library
+(see [Spoolman](#spoolman)).
 
 ## Install (on the Klipper host)
 
@@ -149,8 +153,9 @@ unreachable, klipper-connect logs it once and keeps trying.
 
 ### Moonraker update manager
 
-The installer adds this section to `moonraker.conf` (use `-M` to skip it and
-add it yourself, e.g. if `moonraker.conf` is in a git repo):
+The installer adds this section to `moonraker.conf`. With `-n`, the section
+and `managed_services` use that name instead. Use `-M` to skip this and add
+it yourself, e.g. if `moonraker.conf` is in a git repo:
 
 ```ini
 [update_manager klipper-connect]
@@ -163,14 +168,65 @@ requirements: requirements.txt
 managed_services: klipper-connect
 ```
 
-### Prusa MINI (experimental)
+### Spoolman
 
-Set `type: MINI` in `[printer]`; [examples/klipper_connect.mini.conf](examples/klipper_connect.mini.conf)
-is a starting point (MINI fan names, `EXTRUDER=` for the filament macros).
-klipper-connect then reports printer type 2.1.0, the same as the MINI's own
-Buddy firmware. Connect has only seen MINIs running that firmware, so some
-MINI-only features may not work; the log shows any command that fails.
+If `moonraker.conf` has a `[spoolman]` section, klipper-connect reports the
+**material of the active spool** (e.g. `PLA`) to Connect as the loaded
+filament, refreshed every 30 seconds. The active spool is the one picked in
+Mainsail/Fluidd's Spoolman panel or with `SET_ACTIVE_SPOOL`.
+
+- Connect needs a loaded material before it enables "assign filament" on
+  the Tools tab.
+- While printing, the spool's material wins over the one in the G-code file.
+- Without Spoolman or an active spool, `default_material` in `[printer]` is
+  used, if set.
+
+Only the material type is sent. Connect's own spool library (consumed
+grams, colour, tags) is separate: the printer connection can't select a
+Connect spool or update it. Spoolman keeps tracking usage through Moonraker
+as usual; klipper-connect only reads from it.
+
+### Prusa MINI
+
+Set `type: MINI` in `[printer]`.
+[examples/klipper_connect.mini.conf](examples/klipper_connect.mini.conf) is a
+starting point (MINI fan names, `EXTRUDER=` for the filament macros). Connect
+normally talks to MINIs running Prusa's Buddy firmware, so klipper-connect
+reports itself the way Buddy does:
+
+- printer type 2.1.0, with files on a `usb` storage (`/usb/...` in Connect)
+- folders are listed when Connect browses them
+- **encrypted downloads**: Connect sends a MINI files encrypted, from
+  `buddy-a.connect.prusa3d.com`. klipper-connect decrypts them (AES-CBC or
+  AES-CTR, detected automatically) using `pycryptodome`, which the installer
+  pulls in.
+- Connect shows the firmware version as "deprecated" (it expects Buddy
+  8.x). Set `firmware_version` in `[printer]` to hide that, e.g. `8.0.0`.
+- the "Start MBL" button isn't shown for a MINI; send `G80` from the G-code
+  box instead.
+
+Recent Buddy firmware talks to Connect over a websocket; klipper-connect
+uses the older HTTP protocol, which Connect still accepts. If Prusa stops
+accepting it for MINIs, MINI support would need updating. The MK3S is
+unaffected (it goes through the same route as PrusaLink).
+
 Turn off binary G-code in PrusaSlicer's MINI profile.
+
+### Troubleshooting
+
+Every command from Connect and its result is logged:
+
+```bash
+journalctl -u klipper-connect --since "15 min ago" | grep -E "Connect command|ERROR|WARNING"
+```
+
+- `Connect command 12 GCODE: {...} -> FINISHED` lines show what Connect
+  asked for and whether it worked.
+- `Connect POST /p/events -> 503` style lines show which request Connect
+  rejected.
+- A printer stuck in ERROR usually means Klipper isn't ready, or the bridge
+  is talking to the wrong Moonraker. Check `[moonraker] url`, or the port in
+  the `moonraker.conf` next to `klipper_connect.conf`.
 
 ## Notes
 
