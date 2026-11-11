@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+    systemctl stop 'klipper-connect@*.service' || true
+fi
+
+# Written by postinst, so not in the package's file list
+find /usr/lib/klipper-connect -name __pycache__ -type d -prune \
+    -exec rm -rf {} + 2>/dev/null || true
+
+#DEBHELPER#
+
+exit 0

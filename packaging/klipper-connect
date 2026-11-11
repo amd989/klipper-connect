@@ -1,0 +1,10 @@
+#!/usr/bin/python3 -s
+# klipper-connect from the deb/rpm package. The code and the Python packages
+# it needs live in /usr/lib/klipper-connect (see packaging/build-lib.sh).
+import sys
+
+sys.path.insert(0, "/usr/lib/klipper-connect")
+
+from klipper_connect.cli import main  # noqa: E402
+
+sys.exit(main())

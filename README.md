@@ -67,6 +67,73 @@ M600 prompts), updates started from Connect, and Connect's spool library
 ## Install (on the Klipper host)
 
 ```bash
+curl -fsSL https://packages.alejandro.md/setup.sh | sudo sh
+sudo apt install klipper-connect
+```
+
+That adds the [packages.alejandro.md](https://packages.alejandro.md)
+repository (Debian/Raspberry Pi OS Bookworm or Trixie; amd64, arm64, armhf)
+and installs the bridge. On Fedora, Rocky or Alma, the same `setup.sh` line
+works, followed by `sudo dnf install klipper-connect`. Updates come with the
+rest of the system (`sudo apt upgrade`, or Mainsail/Fluidd's system update),
+and running bridges are restarted after an update.
+
+Installing doesn't start anything. Set up the bridge for your printer:
+
+```bash
+sudo klipper-connect-setup
+```
+
+It copies the example config to `<config>/klipper_connect.conf` (an
+existing config is kept), then configures and enables the
+`klipper-connect@printer` systemd service. Run it again at any time.
+
+| Option | Meaning | Default |
+|---|---|---|
+| `-u USER` | user that runs Klipper/Moonraker | the user running `sudo` |
+| `-d DIR` | printer_data folder | `~/printer_data` |
+| `-c DIR` | Klipper config folder | `<printer_data>/config` |
+| `-m NAME` | Moonraker's systemd service | `moonraker` |
+| `-n NAME` | instance name, the service is `klipper-connect@NAME` | `printer` |
+
+**Several printers on one host** (e.g. installed with KIAUH): run it once
+per printer. For a KIAUH folder `~/X_data`, `-m` defaults to `moonraker-X`
+and `-n` to `X`, so this is usually all it takes:
+
+```bash
+sudo klipper-connect-setup -d ~/mini_data       # klipper-connect@mini
+sudo klipper-connect-setup -d ~/ender3s1_data   # klipper-connect@ender3s1
+```
+
+Each bridge talks to its own Moonraker: the port is read from the
+`moonraker.conf` next to its `klipper_connect.conf` (or set `[moonraker] url`).
+
+Then:
+
+1. Edit `<config>/klipper_connect.conf` and set
+   `serial_number` to the `CZPX...` number on the printer's sticker.
+2. Link the printer to your Connect account:
+   ```bash
+   klipper-connect -c ~/printer_data/config/klipper_connect.conf register
+   ```
+   (the setup prints the exact command). Open the link it prints and
+   confirm. The token goes to
+   `<printer_data>/klipper_connect/prusa_connect.ini`, which is outside the
+   config folder so it doesn't end up in config backups.
+3. Start it (with the instance name from the setup):
+   ```bash
+   sudo systemctl start klipper-connect@printer
+   journalctl -u klipper-connect@printer -f
+   ```
+
+To remove a printer's bridge: `sudo systemctl disable --now klipper-connect@NAME`.
+
+### From git
+
+Without the package repository (or to run the latest `main`), install from
+a clone:
+
+```bash
 git clone https://github.com/amd989/klipper-connect.git ~/klipper-connect
 cd ~/klipper-connect
 ./scripts/install.sh
@@ -94,36 +161,18 @@ Options for other folder layouts (multiple printers, custom paths):
 | `-n NAME` | this bridge's systemd service | `klipper-connect` |
 | `-M` | don't touch `moonraker.conf` | |
 
-**Several printers on one host** (e.g. installed with KIAUH): run the
-installer once per printer, each with its own data folder, Moonraker service
-and bridge name:
+For several printers, run the installer once per printer, each with its own
+data folder, Moonraker service and bridge name. The Python environment and
+the repo are shared:
 
 ```bash
 ./scripts/install.sh -d ~/mini_data -m moonraker-mini -n klipper-connect-mini
 ./scripts/install.sh -d ~/ender3s1_data -m moonraker-ender3s1 -n klipper-connect-ender
 ```
 
-Each bridge talks to its own Moonraker: the port is read from the
-`moonraker.conf` next to its `klipper_connect.conf` (or set `[moonraker] url`).
-The Python environment and the repo are shared.
-
-Then:
-
-1. Edit `<config>/klipper_connect.conf` and set
-   `serial_number` to the `CZPX...` number on the printer's sticker.
-2. Link the printer to your Connect account:
-   ```bash
-   ~/klipper-connect-env/bin/klipper-connect -c <config>/klipper_connect.conf register
-   ```
-   (the installer prints the exact command). Open the link it prints and
-   confirm. The token goes to
-   `<printer_data>/klipper_connect/prusa_connect.ini`, which is outside the
-   config folder so it doesn't end up in config backups.
-3. Start it (use the `-n` name if you gave one):
-   ```bash
-   sudo systemctl start klipper-connect
-   journalctl -u klipper-connect -f
-   ```
+Then follow the same three steps as above, with
+`~/klipper-connect-env/bin/klipper-connect` for the `register` command and
+the `-n` name (default `klipper-connect`) for `systemctl` and `journalctl`.
 
 ### With KIAUH
 
@@ -153,7 +202,8 @@ unreachable, klipper-connect logs it once and keeps trying.
 
 ### Moonraker update manager
 
-The installer adds this section to `moonraker.conf`. With `-n`, the section
+For installs from git. (The package is updated with the rest of the system
+instead.) The installer adds this section to `moonraker.conf`. With `-n`, the section
 and `managed_services` use that name instead. Use `-M` to skip this and add
 it yourself, e.g. if `moonraker.conf` is in a git repo:
 
@@ -219,6 +269,8 @@ Every command from Connect and its result is logged:
 ```bash
 journalctl -u klipper-connect --since "15 min ago" | grep -E "Connect command|ERROR|WARNING"
 ```
+
+(`-u klipper-connect@printer`, or your instance name, for the package.)
 
 - `Connect command 12 GCODE: {...} -> FINISHED` lines show what Connect
   asked for and whether it worked.

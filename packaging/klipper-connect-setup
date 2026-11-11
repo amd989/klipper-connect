@@ -1,0 +1,142 @@
+#!/bin/sh
+# Set up a klipper-connect bridge for one printer, for the deb/rpm package.
+# The packaged counterpart of scripts/install.sh: same folder options, but
+# the code is already installed and the service is klipper-connect@NAME.
+set -eu
+
+usage() {
+    cat <<EOF
+Usage: sudo klipper-connect-setup [options]
+
+Set up the klipper-connect bridge for one printer: copy the example config,
+configure the klipper-connect@NAME service and enable it. Safe to run again;
+an existing config is kept.
+
+  -u USER  user that runs Klipper/Moonraker  (default: the user running sudo)
+  -d DIR   printer_data folder              (default: ~USER/printer_data)
+  -c DIR   Klipper config folder            (default: <printer_data>/config)
+  -m NAME  Moonraker's systemd service      (default: moonraker)
+  -n NAME  instance name; the service is klipper-connect@NAME
+                                            (default: printer)
+  -h       show this help
+
+For a KIAUH-style folder ~/X_data, -m defaults to moonraker-X and -n to X.
+Several printers on one host, one bridge each:
+
+  sudo klipper-connect-setup
+  sudo klipper-connect-setup -d ~/mini_data
+      (same as -d ~/mini_data -m moonraker-mini -n mini)
+EOF
+}
+
+die() { echo "klipper-connect-setup: $*" >&2; exit 1; }
+
+RUN_USER="${SUDO_USER:-}"
+DATA_DIR=""
+CONFIG_DIR=""
+MOONRAKER_SERVICE=""
+NAME=""
+
+while getopts "u:d:c:m:n:h" opt; do
+    case "$opt" in
+        u) RUN_USER="$OPTARG" ;;
+        d) DATA_DIR="${OPTARG%/}" ;;
+        c) CONFIG_DIR="${OPTARG%/}" ;;
+        m) MOONRAKER_SERVICE="${OPTARG%.service}" ;;
+        n) NAME="$OPTARG" ;;
+        h) usage; exit 0 ;;
+        *) usage >&2; exit 2 ;;
+    esac
+done
+
+[ "$(id -u)" = 0 ] || die "run it as root: sudo klipper-connect-setup"
+[ -n "$RUN_USER" ] && [ "$RUN_USER" != root ] ||
+    die "say which user runs Klipper with -u USER"
+passwd_entry="$(getent passwd "$RUN_USER")" || die "no user $RUN_USER"
+USER_HOME="$(echo "$passwd_entry" | cut -d: -f6)"
+USER_GROUP="$(id -gn "$RUN_USER")"
+
+DATA_DIR="${DATA_DIR:-$USER_HOME/printer_data}"
+CONFIG_DIR="${CONFIG_DIR:-$DATA_DIR/config}"
+CONFIG="$CONFIG_DIR/klipper_connect.conf"
+MOONRAKER_CONF="$CONFIG_DIR/moonraker.conf"
+
+# KIAUH names a second printer's folder X_data and its Moonraker moonraker-X
+data_base="$(basename "$DATA_DIR")"
+kiauh_name=""
+case "$data_base" in
+    printer_data) ;;
+    ?*_data) kiauh_name="${data_base%_data}" ;;
+esac
+NAME="${NAME:-${kiauh_name:-printer}}"
+MOONRAKER_SERVICE="${MOONRAKER_SERVICE:-moonraker${kiauh_name:+-$kiauh_name}}"
+
+case "$NAME" in
+    *[!A-Za-z0-9_.-]*|"")
+        die "instance name '$NAME' may only use letters, digits, _ . and -" ;;
+esac
+UNIT="klipper-connect@$NAME"
+
+[ -d "$CONFIG_DIR" ] || die "config folder $CONFIG_DIR doesn't exist (use -d or -c)"
+
+if [ ! -f "$CONFIG" ]; then
+    install -m 0644 -o "$RUN_USER" -g "$USER_GROUP" \
+        /usr/share/klipper-connect/klipper_connect.conf.example "$CONFIG"
+    # Point the bridge at this printer_data folder if it isn't the parent
+    # of the config folder (the default the bridge assumes)
+    if [ "$(dirname "$CONFIG_DIR")" != "$DATA_DIR" ]; then
+        sed -i "s|^#data_dir:.*|data_dir: $DATA_DIR|" "$CONFIG"
+    fi
+    echo "==> Wrote $CONFIG - set serial_number before registering"
+else
+    echo "==> Keeping existing $CONFIG"
+fi
+
+echo "==> systemd service $UNIT"
+DROPIN_DIR="/etc/systemd/system/$UNIT.service.d"
+mkdir -p "$DROPIN_DIR"
+cat > "$DROPIN_DIR/instance.conf" <<EOF
+# Written by klipper-connect-setup; run it again to change these.
+[Unit]
+After=$MOONRAKER_SERVICE.service
+
+[Service]
+User=$RUN_USER
+Group=$USER_GROUP
+WorkingDirectory=$USER_HOME
+Environment="KLIPPER_CONNECT_CONFIG=$CONFIG"
+EOF
+have_systemd=0
+if [ -d /run/systemd/system ]; then
+    have_systemd=1
+    systemctl daemon-reload
+    systemctl enable -q "$UNIT"
+fi
+
+# Moonraker may only restart services listed in moonraker.asvc
+ASVC="$DATA_DIR/moonraker.asvc"
+if [ -f "$ASVC" ] && ! grep -qx "$UNIT" "$ASVC"; then
+    echo "$UNIT" >> "$ASVC"
+    echo "==> Added $UNIT to $ASVC"
+fi
+
+# Tell the user which Moonraker the bridge will talk to
+port="$(sed -n '/^\[server\]/,/^\[/{s/^port:[[:space:]]*\([0-9]*\).*/\1/p}' \
+    "$MOONRAKER_CONF" 2>/dev/null | head -n1)"
+echo "==> Bridge will use Moonraker on port ${port:-7125} (from $MOONRAKER_CONF)"
+
+if [ -f "$DATA_DIR/klipper_connect/prusa_connect.ini" ] && [ "$have_systemd" = 1 ]
+then
+    echo "==> Restarting $UNIT"
+    systemctl restart "$UNIT"
+    echo
+    echo "Done. $UNIT is running."
+else
+    cat <<EOF
+
+Done. Next steps:
+  1. Set serial_number in $CONFIG
+  2. sudo -u $RUN_USER klipper-connect -c $CONFIG register
+  3. sudo systemctl start $UNIT
+EOF
+fi

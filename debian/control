@@ -1,0 +1,22 @@
+Source: klipper-connect
+Section: misc
+Priority: optional
+Maintainer: amd989 <amd989@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/amd989/klipper-connect
+Vcs-Git: https://github.com/amd989/klipper-connect.git
+Vcs-Browser: https://github.com/amd989/klipper-connect
+
+Package: klipper-connect
+Architecture: any
+Depends: python3 (>= 3.9), ${shlibs:Depends}, ${misc:Depends}
+Recommends: alejandro-md-keyring
+Description: Prusa Connect bridge for Klipper printers
+ Runs next to Moonraker and makes a Klipper printer show up in Prusa
+ Connect: status, telemetry, files, starting and stopping prints, camera
+ snapshots. Supports the MK3S and the MINI.
+ .
+ One bridge per printer runs as the klipper-connect@NAME systemd service.
+ Set one up with `sudo klipper-connect-setup`; nothing is started on install.

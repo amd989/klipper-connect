@@ -22,4 +22,7 @@ jobs:
       - name: Test
         run: pytest -q
       - name: Check install script syntax
-        run: bash -n scripts/install.sh
+        run: |
+          bash -n scripts/install.sh
+          sh -n packaging/klipper-connect-setup
+          sh -n packaging/build-lib.sh
