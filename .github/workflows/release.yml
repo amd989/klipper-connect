@@ -1,0 +1,206 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # One deb per architecture, for every Debian release: the Python code and
+  # its dependencies are bundled as pure Python (plus pycryptodome's abi3
+  # libraries), resolved with Python 3.9 so they also run on Bullseye.
+  # See packaging/build-lib.sh.
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            docker_platform: linux/amd64
+          - arch: arm64
+            docker_platform: linux/arm64
+          - arch: armhf
+            docker_platform: linux/arm/v7
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Debian and rpm sort a pre-release before its release with ~
+          echo "package_version=$(echo "$version" | tr - '~')" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
+        run: |
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+          sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" klipper_connect/__init__.py
+          sed -i "1s/([^)]*)/($PACKAGE_VERSION-1)/" debian/changelog
+
+      - name: Build .deb package
+        run: |
+          docker run --rm --platform ${{ matrix.docker_platform }} \
+            -v "$PWD":/build -w /build \
+            python:3.9-slim-bookworm bash -c '
+              set -e
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential debhelper fakeroot
+              export DEB_BUILD_OPTIONS=noautodbgsym
+              PYTHON=/usr/local/bin/python3 dpkg-buildpackage -us -uc -b
+              mkdir -p output
+              mv ../*.deb output/
+              for f in output/*.deb; do
+                arch=$(dpkg-deb -f "$f" Architecture)
+                if [ "$arch" != "${{ matrix.arch }}" ]; then
+                  echo "ERROR: $f has Architecture=$arch, expected ${{ matrix.arch }}"
+                  exit 1
+                fi
+              done
+            '
+
+      - name: Test the .deb on Bookworm and Trixie
+        run: |
+          for release in bookworm trixie; do
+            docker run --rm --platform ${{ matrix.docker_platform }} \
+              -v "$PWD/output":/output debian:$release bash -c '
+                set -e
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update -qq
+                apt-get install -y -qq /output/*.deb
+                klipper-connect --version
+                klipper-connect-setup -h >/dev/null
+                python3 -s -c "import sys; sys.path.insert(0, \"/usr/lib/klipper-connect\"); from Crypto.Cipher import AES; import klipper_connect.bridge, klipper_connect.downloads, klipper_connect.camera"
+                echo "OK on '"$release"' with $(python3 -V)"
+              '
+          done
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: output/*.deb
+
+  build-rpm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            docker_platform: linux/amd64
+          - arch: aarch64
+            docker_platform: linux/arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "package_version=$(echo "$version" | tr - '~')" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+          sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" klipper_connect/__init__.py
+
+      # EL9, like every other rpm on packages.alejandro.md. Its Python 3.9
+      # is the oldest one supported, so the bundled packages also run on
+      # newer Fedora.
+      - name: Build .rpm package
+        run: |
+          docker run --rm --platform ${{ matrix.docker_platform }} \
+            -v "$PWD":/build -w /build \
+            rockylinux:9 bash -c '
+              set -e
+              dnf install -y rpm-build python3 gcc systemd-rpm-macros
+              VERSION='"${{ steps.version.outputs.package_version }}"'
+              mkdir -p /root/rpmbuild/{SOURCES,SPECS}
+              tar czf /root/rpmbuild/SOURCES/klipper-connect-${VERSION}.tar.gz \
+                --transform "s,^\.,klipper-connect-${VERSION}," \
+                --exclude=.git .
+              cp rpm/klipper-connect.spec /root/rpmbuild/SPECS/
+              rpmbuild -bb --define "_version ${VERSION}" /root/rpmbuild/SPECS/klipper-connect.spec
+              mkdir -p /build/output
+              cp /root/rpmbuild/RPMS/*/*.rpm /build/output/
+            '
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch }}
+          path: output/*.rpm
+
+  release:
+    needs: [build, build-rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            packages/*.deb
+            packages/*.rpm
+          generate_release_notes: true
+
+  # Packages are published centrally by amd989/packages, which serves
+  # packages.alejandro.md. This repository builds, attaches the artifacts to
+  # its own GitHub Release, and asks the publisher to pick that release up.
+  # The signing key and the storage credentials live only over there.
+  publish:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish to packages.alejandro.md
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::PACKAGES_DISPATCH_TOKEN is not set. The release exists, but packages.alejandro.md was not asked to publish it. Set the secret, then run the publish workflow in amd989/packages by hand for $REPO $TAG."
+            exit 1
+          fi
+          # -f rather than -F: -F converts values that look like numbers or
+          # booleans, and the publisher expects the tag as a string.
+          gh api repos/amd989/packages/dispatches \
+            -f event_type=publish \
+            -f "client_payload[repo]=$REPO" \
+            -f "client_payload[tag]=$TAG"
+          {
+            echo "### Asked packages.alejandro.md to publish \`$REPO\` \`$TAG\`"
+            echo
+            echo "Follow it at https://github.com/amd989/packages/actions/workflows/publish.yaml"
+          } >> "$GITHUB_STEP_SUMMARY"
