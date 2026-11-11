@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = purge ]; then
+    # Instances enabled and configured by klipper-connect-setup. Printer
+    # configs and Connect credentials in printer_data are left alone.
+    rm -f /etc/systemd/system/multi-user.target.wants/klipper-connect@*.service
+    for dir in /etc/systemd/system/klipper-connect@*.service.d; do
+        [ -d "$dir" ] || continue
+        rm -f "$dir/instance.conf"
+        rmdir "$dir" 2>/dev/null || true
+    done
+fi
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0

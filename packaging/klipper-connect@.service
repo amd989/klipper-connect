@@ -1,0 +1,18 @@
+# One bridge per printer: klipper-connect@NAME. `sudo klipper-connect-setup`
+# writes each instance's user, config file and Moonraker service to
+# /etc/systemd/system/klipper-connect@NAME.service.d/instance.conf.
+[Unit]
+Description=klipper-connect %i: Prusa Connect bridge for Klipper
+Documentation=https://github.com/amd989/klipper-connect
+After=network-online.target
+Wants=network-online.target
+AssertPathExists=/etc/systemd/system/klipper-connect@%i.service.d/instance.conf
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/klipper-connect -c ${KLIPPER_CONNECT_CONFIG} run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

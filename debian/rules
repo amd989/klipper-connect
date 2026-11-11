@@ -1,0 +1,28 @@
+#!/usr/bin/make -f
+# The Python code and its dependencies go into /usr/lib/klipper-connect as
+# plain folders (see packaging/build-lib.sh), so one package runs on every
+# Debian release. Build with the oldest Python to support, e.g.
+#   PYTHON=python3.9 dpkg-buildpackage -us -uc -b
+# The release workflow builds in the python:3.9 image for that reason, which
+# is also why python3 isn't in Build-Depends: it doesn't come from Debian.
+
+PKG := debian/klipper-connect
+
+%:
+	dh $@
+
+override_dh_auto_configure override_dh_auto_build override_dh_auto_test:
+
+override_dh_auto_clean:
+	rm -rf build *.egg-info
+
+override_dh_auto_install:
+	sh packaging/build-lib.sh $(PKG)/usr/lib/klipper-connect
+	install -D -m 0755 packaging/klipper-connect $(PKG)/usr/bin/klipper-connect
+	install -D -m 0755 packaging/klipper-connect-setup $(PKG)/usr/sbin/klipper-connect-setup
+	install -D -m 0644 packaging/klipper-connect@.service $(PKG)/lib/systemd/system/klipper-connect@.service
+	install -D -m 0644 klipper_connect.conf.example $(PKG)/usr/share/klipper-connect/klipper_connect.conf.example
+
+# A template unit has no instance to enable or start; postinst reloads
+# systemd and restarts the bridges that were running.
+override_dh_installsystemd:

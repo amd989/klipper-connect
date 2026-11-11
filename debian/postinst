@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = configure ]; then
+    # Byte-compile for whichever Python 3 this system has
+    python3 -m compileall -q /usr/lib/klipper-connect >/dev/null 2>&1 || true
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null || true
+        # Upgrade: restart the bridges that were running. Nothing is
+        # enabled or started on a fresh install.
+        if [ -n "$2" ]; then
+            systemctl try-restart 'klipper-connect@*.service' || true
+        fi
+    fi
+
+    if [ -z "$2" ]; then
+        echo "klipper-connect installed. Set up a printer with: sudo klipper-connect-setup"
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0
